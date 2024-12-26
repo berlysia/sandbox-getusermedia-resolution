@@ -3,7 +3,6 @@ import { ChangeEventHandler, useRef, useState } from "react";
 const CameraApp = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState({ width: 640, height: 480 });
-  const [requestedConstraints, setRequestedConstraints] = useState({});
   const [trackCorrespondences, setTrackCorrespondences] = useState({});
   const [useMaxResolution, setUseMaxResolution] = useState(false);
   const [maxResolution, setMaxResolution] = useState({ width: 0, height: 0 });
@@ -98,8 +97,6 @@ const CameraApp = () => {
                 ...(facingMode && { facingMode: { exact: facingMode } }),
               },
       };
-
-      setRequestedConstraints(constraints);
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
@@ -358,9 +355,6 @@ const CameraApp = () => {
         }}
       ></video>
 
-      <div>
-        <pre>{JSON.stringify(requestedConstraints, null, 2)}</pre>
-      </div>
       <div>
         <pre>{JSON.stringify(trackCorrespondences, null, 2)}</pre>
       </div>
