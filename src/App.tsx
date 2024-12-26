@@ -1,8 +1,9 @@
-import { ChangeEventHandler, useEffect, useRef, useState } from "react";
+import { ChangeEventHandler, useRef, useState } from "react";
 
 const CameraApp = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState({ width: 640, height: 480 });
+  const [requestedConstraints, setRequestedConstraints] = useState({});
   const [useMaxResolution, setUseMaxResolution] = useState(false);
   const [maxResolution, setMaxResolution] = useState({ width: 0, height: 0 });
   const [useMinResolution, setUseMinResolution] = useState(false);
@@ -12,33 +13,47 @@ const CameraApp = () => {
     width: 0,
     height: 0,
   });
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState("");
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
+  const [facingMode, setFacingMode] = useState("");
 
-  useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        const deviceInfos = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = deviceInfos.filter(
-          (device) => device.kind === "videoinput",
-        );
-        setDevices(videoDevices);
-        if (videoDevices.length > 0) {
-          setSelectedDevice(videoDevices[0].deviceId);
-        }
-      } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message);
-        }
+  const fetchDevices = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      for (const track of stream.getTracks()) {
+        track.stop();
       }
-    };
+      const deviceInfos = await navigator.mediaDevices.enumerateDevices();
+      setVideoDevices(
+        deviceInfos.filter((device) => device.kind === "videoinput"),
+      );
+      setAudioDevices(
+        deviceInfos.filter((device) => device.kind === "audioinput"),
+      );
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      }
+    }
+  };
 
-    fetchDevices();
-  }, []);
+  const fetchDevicesOnce = async () => {
+    if (videoDevices.length > 0) {
+      return;
+    }
+    await fetchDevices();
+  };
 
-  const handleDeviceChange: ChangeEventHandler<HTMLSelectElement> = (event) => {
-    setSelectedDevice(event.currentTarget.value);
-    stopStream();
+  const handleVideoDeviceChange: ChangeEventHandler<HTMLSelectElement> = (
+    event,
+  ) => {
+    const deviceId = event.currentTarget.value;
+    setSelectedVideoDevice(deviceId);
   };
 
   const startStream = async () => {
@@ -48,8 +63,16 @@ const CameraApp = () => {
     }
 
     try {
+      const stopped = stopStream();
+      if (stopped) {
+        // 高速に停止と開始を行うとデバイスを握ったまま応答しなくなることがあった
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       const constraints: MediaStreamConstraints = {
-        ...(selectedDevice && { deviceId: { exact: selectedDevice } }),
+        ...(selectedVideoDevice && {
+          deviceId: { exact: selectedVideoDevice },
+        }),
+        ...(facingMode && { facingMode: facingMode }),
         video:
           useMaxResolution || useMinResolution
             ? {
@@ -66,7 +89,16 @@ const CameraApp = () => {
               }
             : { width: resolution.width, height: resolution.height },
       };
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      for (const track of stream.getTracks()) {
+        setRequestedConstraints({
+          capabilities: track.getCapabilities(),
+          constraints: track.getConstraints(),
+          settings: track.getSettings(),
+        });
+      }
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -87,66 +119,158 @@ const CameraApp = () => {
         tracks.forEach((track) => track.stop());
       }
       videoRef.current.srcObject = null;
+      return true;
     }
-  };
-
-  const handleResolutionChange: ChangeEventHandler<HTMLSelectElement> = (
-    event,
-  ) => {
-    const [width, height] = event.currentTarget.value.split("x").map(Number);
-    setResolution({ width, height });
-    stopStream();
+    return false;
   };
 
   return (
     <div>
       <h1>Camera Stream with Resolution Adjustment</h1>
+      <p>
+        <a
+          href="https://github.com/berlysia/sandbox-getusermedia-resolution"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          source code
+        </a>
+      </p>
 
       <div>
-        <label htmlFor="device">Select Camera: </label>
-        <select
-          id="device"
-          onChange={handleDeviceChange}
-          value={selectedDevice || ""}
-        >
-          {devices.map((device) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label || `Camera ${device.deviceId}`}
-            </option>
-          ))}
-        </select>
+        <label>
+          Select Camera:
+          <select
+            onClick={fetchDevicesOnce}
+            onChange={handleVideoDeviceChange}
+            value={selectedVideoDevice || ""}
+          >
+            <option value="">選択してください</option>
+            {videoDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Camera ${device.deviceId}`}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div>
-        <label htmlFor="resolution">Select Resolution: </label>
-        <select
-          id="resolution"
-          onChange={handleResolutionChange}
-          defaultValue="640x480"
-        >
-          <option value="640x480">640x480</option>
-          <option value="1280x720">1280x720</option>
-          <option value="1920x1080">1920x1080</option>
-        </select>
+        <label>
+          Select Audio:
+          <select
+            onClick={fetchDevicesOnce}
+            onChange={(e) => setSelectedAudioDevice(e.currentTarget.value)}
+            value={selectedAudioDevice || ""}
+          >
+            <option value="">選択してください</option>
+            {audioDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Audio ${device.deviceId}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div>
+        <button type="button" onClick={fetchDevices}>
+          Reload Devices
+        </button>
+      </div>
+
+      <div>
+        <label>
+          Select Facing Mode:
+          <select
+            onChange={(e) => setFacingMode(e.currentTarget.value)}
+            value={facingMode}
+          >
+            <option value="">None</option>
+            <option value="user">user</option>
+            <option value="environment">environment</option>
+          </select>
+        </label>
+      </div>
+
+      <div>
+        <label>
+          Select Resolution:
+          <select
+            id="resolution"
+            onChange={(event) => {
+              const [width, height] = event.currentTarget.value
+                .split("x")
+                .map(Number);
+              setResolution({ width, height });
+            }}
+            defaultValue="640x480"
+          >
+            <option value="640x480">640x480</option>
+            <option value="1280x720">1280x720</option>
+            <option value="1920x1080">1920x1080</option>
+          </select>
+        </label>
       </div>
       <div>
-        <label htmlFor="resolution">Custom Resolution: </label>
+        <label>
+          Custom Resolution:
+          <input
+            type="text"
+            placeholder="width"
+            value={resolution.width}
+            onChange={(e) => {
+              setResolution({
+                width: Number(e.target.value),
+                height: resolution.height,
+              });
+            }}
+          />
+          x
+          <input
+            type="text"
+            placeholder="height"
+            value={resolution.height}
+            onChange={(e) => {
+              setResolution({
+                width: resolution.width,
+                height: Number(e.target.value),
+              });
+            }}
+          />
+        </label>
+      </div>
+
+      <div>
+        <label>
+          Use Max Resolution:
+          <input
+            type="checkbox"
+            checked={useMaxResolution}
+            onChange={(e) => {
+              setUseMaxResolution(e.target.checked);
+            }}
+          />
+        </label>
         <input
           type="text"
           placeholder="width"
+          disabled={!useMaxResolution}
           onChange={(e) => {
-            setResolution({
+            setMaxResolution({
               width: Number(e.target.value),
-              height: resolution.height,
+              height: maxResolution.height,
             });
           }}
         />
+        x
         <input
           type="text"
           placeholder="height"
+          disabled={!useMaxResolution}
           onChange={(e) => {
-            setResolution({
-              width: resolution.width,
+            setMaxResolution({
+              width: maxResolution.width,
               height: Number(e.target.value),
             });
           }}
@@ -154,92 +278,51 @@ const CameraApp = () => {
       </div>
 
       <div>
-        <label htmlFor="maxResolution">Use Max Resolution: </label>
+        <label>
+          Use Min Resolution:
+          <input
+            type="checkbox"
+            checked={useMinResolution}
+            onChange={(e) => {
+              setUseMinResolution(e.target.checked);
+            }}
+          />
+        </label>
         <input
-          type="checkbox"
-          id="maxResolution"
-          checked={useMaxResolution}
+          type="text"
+          placeholder="width"
+          disabled={!useMinResolution}
           onChange={(e) => {
-            setUseMaxResolution(e.target.checked);
-            if (e.target.checked) {
-              setResolution(maxResolution);
-            }
+            setMinResolution({
+              width: Number(e.target.value),
+              height: minResolution.height,
+            });
           }}
         />
-        {useMaxResolution && (
-          <div>
-            <input
-              type="text"
-              placeholder="width"
-              onChange={(e) => {
-                setMaxResolution({
-                  width: Number(e.target.value),
-                  height: maxResolution.height,
-                });
-              }}
-            />
-            <input
-              type="text"
-              placeholder="height"
-              onChange={(e) => {
-                setMaxResolution({
-                  width: maxResolution.width,
-                  height: Number(e.target.value),
-                });
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label htmlFor="minResolution">Use Min Resolution: </label>
+        x
         <input
-          type="checkbox"
-          id="minResolution"
-          checked={useMinResolution}
+          type="text"
+          placeholder="height"
+          disabled={!useMinResolution}
           onChange={(e) => {
-            setUseMinResolution(e.target.checked);
-            if (e.target.checked) {
-              setResolution(minResolution);
-            }
+            setMinResolution({
+              width: minResolution.width,
+              height: Number(e.target.value),
+            });
           }}
         />
-        {useMinResolution && (
-          <div>
-            <input
-              type="text"
-              placeholder="width"
-              onChange={(e) => {
-                setMinResolution({
-                  width: Number(e.target.value),
-                  height: minResolution.height,
-                });
-              }}
-            />
-            <input
-              type="text"
-              placeholder="height"
-              onChange={(e) => {
-                setMinResolution({
-                  width: minResolution.width,
-                  height: Number(e.target.value),
-                });
-              }}
-            />
-          </div>
-        )}
       </div>
 
       <div>
-        <button onClick={startStream}>Start Camera</button>
-        <button onClick={stopStream}>Stop Camera</button>
+        <button type="button" onClick={startStream}>
+          Start Camera
+        </button>
+        <button type="button" onClick={stopStream}>
+          Stop Camera
+        </button>
       </div>
 
       <div>
-        <p>
-          requested resolution: {resolution.width}x{resolution.height}
-        </p>
         <p>
           actual resolution: {actualResolution.width}x{actualResolution.height}
         </p>
@@ -261,6 +344,10 @@ const CameraApp = () => {
           }
         }}
       ></video>
+
+      <div>
+        <pre>{JSON.stringify(requestedConstraints, null, 2)}</pre>
+      </div>
     </div>
   );
 };
