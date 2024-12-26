@@ -4,6 +4,7 @@ const CameraApp = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState({ width: 640, height: 480 });
   const [requestedConstraints, setRequestedConstraints] = useState({});
+  const [trackCorrespondences, setTrackCorrespondences] = useState({});
   const [useMaxResolution, setUseMaxResolution] = useState(false);
   const [maxResolution, setMaxResolution] = useState({ width: 0, height: 0 });
   const [useMinResolution, setUseMinResolution] = useState(false);
@@ -76,10 +77,10 @@ const CameraApp = () => {
         ...(selectedVideoDevice && {
           deviceId: { exact: selectedVideoDevice },
         }),
-        ...(facingMode && { facingMode: facingMode }),
         video:
           useMaxResolution || useMinResolution
             ? {
+                ...(facingMode && { facingMode: { exact: facingMode } }),
                 width: {
                   ideal: resolution.width,
                   ...(useMaxResolution ? { max: maxResolution.width } : {}),
@@ -91,13 +92,19 @@ const CameraApp = () => {
                   ...(useMinResolution ? { min: minResolution.height } : {}),
                 },
               }
-            : { width: resolution.width, height: resolution.height },
+            : {
+                width: resolution.width,
+                height: resolution.height,
+                ...(facingMode && { facingMode: { exact: facingMode } }),
+              },
       };
+
+      setRequestedConstraints(constraints);
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       for (const track of stream.getTracks()) {
-        setRequestedConstraints({
+        setTrackCorrespondences({
           capabilities: track.getCapabilities(),
           constraints: track.getConstraints(),
           settings: track.getSettings(),
@@ -353,6 +360,9 @@ const CameraApp = () => {
 
       <div>
         <pre>{JSON.stringify(requestedConstraints, null, 2)}</pre>
+      </div>
+      <div>
+        <pre>{JSON.stringify(trackCorrespondences, null, 2)}</pre>
       </div>
     </div>
   );
