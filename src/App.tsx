@@ -14,6 +14,7 @@ const CameraApp = () => {
     height: 0,
   });
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
@@ -21,6 +22,7 @@ const CameraApp = () => {
 
   const fetchDevices = async () => {
     try {
+      setLoadingDevices(true);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
@@ -39,6 +41,8 @@ const CameraApp = () => {
       if (err instanceof Error) {
         setError(err.message);
       }
+    } finally {
+      setLoadingDevices(false);
     }
   };
 
@@ -146,6 +150,7 @@ const CameraApp = () => {
             value={selectedVideoDevice || ""}
           >
             <option value="">選択してください</option>
+            {loadingDevices && <option disabled>Loading...</option>}
             {videoDevices.map((device) => (
               <option key={device.deviceId} value={device.deviceId}>
                 {device.label || `Camera ${device.deviceId}`}
@@ -164,6 +169,7 @@ const CameraApp = () => {
             value={selectedAudioDevice || ""}
           >
             <option value="">選択してください</option>
+            {loadingDevices && <option disabled>Loading...</option>}
             {audioDevices.map((device) => (
               <option key={device.deviceId} value={device.deviceId}>
                 {device.label || `Audio ${device.deviceId}`}
