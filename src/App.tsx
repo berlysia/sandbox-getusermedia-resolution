@@ -19,6 +19,7 @@ const CameraApp = () => {
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
   const [facingMode, setFacingMode] = useState("");
+  const [exactFacingMode, setExactFacingMode] = useState(false);
 
   const fetchDevices = async () => {
     try {
@@ -79,7 +80,10 @@ const CameraApp = () => {
         video:
           useMaxResolution || useMinResolution
             ? {
-                ...(facingMode && { facingMode: { exact: facingMode } }),
+                ...(facingMode &&
+                  (exactFacingMode
+                    ? { facingMode: { exact: facingMode } }
+                    : { facingMode })),
                 width: {
                   ideal: resolution.width,
                   ...(useMaxResolution ? { max: maxResolution.width } : {}),
@@ -94,7 +98,10 @@ const CameraApp = () => {
             : {
                 width: resolution.width,
                 height: resolution.height,
-                ...(facingMode && { facingMode: { exact: facingMode } }),
+                ...(facingMode &&
+                  (exactFacingMode
+                    ? { facingMode: { exact: facingMode } }
+                    : { facingMode })),
               },
       };
 
@@ -200,6 +207,17 @@ const CameraApp = () => {
             <option value="user">user</option>
             <option value="environment">environment</option>
           </select>
+        </label>
+      </div>
+
+      <div>
+        <label>
+          Exact Facing Mode:
+          <input
+            type="checkbox"
+            checked={exactFacingMode}
+            onChange={(e) => setExactFacingMode(e.target.checked)}
+          />
         </label>
       </div>
 
