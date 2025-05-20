@@ -19,6 +19,9 @@ const CameraApp = () => {
   const [maxResolution, setMaxResolution] = useState({ width: 0, height: 0 });
   const [useMinResolution, setUseMinResolution] = useState(false);
   const [minResolution, setMinResolution] = useState({ width: 0, height: 0 });
+  // 利用可能な幅と高さの範囲
+  const [widthRange, setWidthRange] = useState<{ min?: number; max?: number }>({});
+  const [heightRange, setHeightRange] = useState<{ min?: number; max?: number }>({});
   const [error, setError] = useState("");
   const [actualResolution, setActualResolution] = useState({
     width: 0,
@@ -94,16 +97,19 @@ const CameraApp = () => {
     const deviceId = event.currentTarget.value;
     setSelectedVideoDevice(deviceId);
 
-    // デバイス変更時に適切なfacingModeの選択肢を表示するための情報更新
-    updateFacingModeOptions(deviceId);
+    // デバイス変更時にcapabilitiesに基づいて設定を更新
+    updateDeviceCapabilitiesOptions(deviceId);
   };
 
-  // デバイスが変更されたときにfacingModeの利用可能な値を更新
-  const updateFacingModeOptions = useCallback(
+  // デバイスが変更されたときにcapabilities情報に基づいて設定を更新
+  const updateDeviceCapabilitiesOptions = useCallback(
     (deviceId: string) => {
       if (!deviceId) {
+        // デバイスが選択されていない場合は設定をクリア
         setAvailableFacingModes([]);
         setFacingMode("");
+        setWidthRange({});
+        setHeightRange({});
         return;
       }
 
@@ -111,35 +117,77 @@ const CameraApp = () => {
         (detail) => detail.deviceInfo.deviceId === deviceId,
       );
 
-      // 選択されたデバイスのcapabilitiesにfacingModeがなければfacingModeをクリア
-      if (!selectedDevice?.capabilities?.facingMode) {
+      const capabilities = selectedDevice?.capabilities;
+      if (!capabilities) {
+        // 選択されたデバイスのcapabilitiesがなければ設定をクリア
         setAvailableFacingModes([]);
         setFacingMode("");
+        setWidthRange({});
+        setHeightRange({});
         return;
       }
 
-      // 利用可能なfacingModeを更新
-      const modes = Array.isArray(selectedDevice.capabilities.facingMode)
-        ? selectedDevice.capabilities.facingMode
-        : [];
+      // ======= facingMode の設定更新 =======
+      if (capabilities.facingMode) {
+        // 利用可能なfacingModeを更新
+        const modes = Array.isArray(capabilities.facingMode)
+          ? capabilities.facingMode
+          : [];
 
-      setAvailableFacingModes(modes);
+        setAvailableFacingModes(modes);
 
-      // 現在選択されているfacingModeが利用可能かどうかチェック
-      if (facingMode && !modes.includes(facingMode)) {
-        // 現在のfacingModeが利用できない場合はクリア
+        // 現在選択されているfacingModeが利用可能かどうかチェック
+        if (facingMode && !modes.includes(facingMode)) {
+          // 現在のfacingModeが利用できない場合はクリア
+          setFacingMode("");
+        }
+      } else {
+        setAvailableFacingModes([]);
         setFacingMode("");
+      }
+
+      // ======= 解像度範囲の設定更新 =======
+      if (capabilities.width) {
+        const width: { min?: number; max?: number } = {};
+        
+        if (typeof capabilities.width.min === 'number') {
+          width.min = capabilities.width.min;
+        }
+        
+        if (typeof capabilities.width.max === 'number') {
+          width.max = capabilities.width.max;
+        }
+        
+        setWidthRange(width);
+      } else {
+        setWidthRange({});
+      }
+
+      if (capabilities.height) {
+        const height: { min?: number; max?: number } = {};
+        
+        if (typeof capabilities.height.min === 'number') {
+          height.min = capabilities.height.min;
+        }
+        
+        if (typeof capabilities.height.max === 'number') {
+          height.max = capabilities.height.max;
+        }
+        
+        setHeightRange(height);
+      } else {
+        setHeightRange({});
       }
     },
     [deviceDetails, facingMode],
   );
 
-  // デバイスの詳細情報が更新されたとき、選択されているデバイスのfacingMode情報を更新
+  // デバイスの詳細情報が更新されたとき、選択されているデバイスのcapabilities情報を更新
   useEffect(() => {
     if (selectedVideoDevice) {
-      updateFacingModeOptions(selectedVideoDevice);
+      updateDeviceCapabilitiesOptions(selectedVideoDevice);
     }
-  }, [deviceDetails, selectedVideoDevice, updateFacingModeOptions]);
+  }, [deviceDetails, selectedVideoDevice, updateDeviceCapabilitiesOptions]);
 
   const getSelectedDeviceCapabilities = () => {
     if (!selectedVideoDevice) return null;
@@ -373,6 +421,16 @@ const CameraApp = () => {
             }}
           />
         </label>
+        {(widthRange.min !== undefined || widthRange.max !== undefined || 
+          heightRange.min !== undefined || heightRange.max !== undefined) && (
+          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
+            利用可能な解像度範囲: 
+            {widthRange.min !== undefined && ` 幅 ${widthRange.min}`}
+            {widthRange.max !== undefined && ` 〜 ${widthRange.max}`}
+            {heightRange.min !== undefined && `, 高さ ${heightRange.min}`}
+            {heightRange.max !== undefined && ` 〜 ${heightRange.max}`}
+          </div>
+        )}
       </div>
 
       <div>
@@ -383,12 +441,21 @@ const CameraApp = () => {
             checked={useMaxResolution}
             onChange={(e) => {
               setUseMaxResolution(e.target.checked);
+              
+              // チェックされた場合、capabilitiesから取得した最大値を設定
+              if (e.target.checked && widthRange.max && heightRange.max) {
+                setMaxResolution({
+                  width: widthRange.max,
+                  height: heightRange.max,
+                });
+              }
             }}
           />
         </label>
         <input
           type="text"
           placeholder="width"
+          value={maxResolution.width || ""}
           disabled={!useMaxResolution}
           onChange={(e) => {
             setMaxResolution({
@@ -401,6 +468,7 @@ const CameraApp = () => {
         <input
           type="text"
           placeholder="height"
+          value={maxResolution.height || ""}
           disabled={!useMaxResolution}
           onChange={(e) => {
             setMaxResolution({
@@ -409,6 +477,11 @@ const CameraApp = () => {
             });
           }}
         />
+        {useMaxResolution && widthRange.max && heightRange.max && (
+          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
+            サポートされている最大解像度: {widthRange.max}x{heightRange.max}
+          </div>
+        )}
       </div>
 
       <div>
@@ -419,12 +492,21 @@ const CameraApp = () => {
             checked={useMinResolution}
             onChange={(e) => {
               setUseMinResolution(e.target.checked);
+              
+              // チェックされた場合、capabilitiesから取得した最小値を設定
+              if (e.target.checked && widthRange.min && heightRange.min) {
+                setMinResolution({
+                  width: widthRange.min,
+                  height: heightRange.min,
+                });
+              }
             }}
           />
         </label>
         <input
           type="text"
           placeholder="width"
+          value={minResolution.width || ""}
           disabled={!useMinResolution}
           onChange={(e) => {
             setMinResolution({
@@ -437,6 +519,7 @@ const CameraApp = () => {
         <input
           type="text"
           placeholder="height"
+          value={minResolution.height || ""}
           disabled={!useMinResolution}
           onChange={(e) => {
             setMinResolution({
@@ -445,6 +528,11 @@ const CameraApp = () => {
             });
           }}
         />
+        {useMinResolution && widthRange.min && heightRange.min && (
+          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
+            サポートされている最小解像度: {widthRange.min}x{heightRange.min}
+          </div>
+        )}
       </div>
 
       <div>
