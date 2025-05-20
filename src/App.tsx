@@ -1,5 +1,10 @@
 import { ChangeEventHandler, useRef, useState } from "react";
 
+interface DeviceDetailInfo {
+  deviceInfo: MediaDeviceInfo;
+  capabilities?: MediaTrackCapabilities;
+}
+
 const CameraApp = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState({ width: 640, height: 480 });
@@ -16,7 +21,7 @@ const CameraApp = () => {
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
-  const [deviceDetails, setDeviceDetails] = useState<MediaDeviceInfo[]>([]);
+  const [deviceDetails, setDeviceDetails] = useState<DeviceDetailInfo[]>([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
   const [facingMode, setFacingMode] = useState("");
@@ -29,11 +34,30 @@ const CameraApp = () => {
         video: true,
         audio: true,
       });
+
+      const deviceInfos = await navigator.mediaDevices.enumerateDevices();
+
+      // DeviceDetailInfoオブジェクトを作成
+      const detailInfos: DeviceDetailInfo[] = deviceInfos.map((deviceInfo) => {
+        // videoinputまたはaudioinputのデバイスに対応するトラックを探す
+        let capabilities: MediaTrackCapabilities | undefined = undefined;
+
+        if (deviceInfo instanceof InputDeviceInfo) {
+          capabilities = deviceInfo.getCapabilities();
+        }
+
+        return {
+          deviceInfo,
+          capabilities,
+        };
+      });
+
+      // トラックを停止
       for (const track of stream.getTracks()) {
         track.stop();
       }
-      const deviceInfos = await navigator.mediaDevices.enumerateDevices();
-      setDeviceDetails(deviceInfos);
+
+      setDeviceDetails(detailInfos);
       setVideoDevices(
         deviceInfos.filter((device) => device.kind === "videoinput"),
       );
@@ -378,33 +402,108 @@ const CameraApp = () => {
       <div>
         <h3>Device Information (enumerateDevices結果)</h3>
         <div>
-          {deviceDetails.map((device, index) => (
-            <div key={index} style={{ marginBottom: "20px", border: "1px solid #ccc", padding: "10px" }}>
-              <h4>デバイス {index + 1}: {device.kind}</h4>
+          {deviceDetails.map((deviceDetail, index) => (
+            <div
+              key={index}
+              style={{
+                marginBottom: "20px",
+                border: "1px solid #ccc",
+                padding: "10px",
+              }}
+            >
+              <h4>
+                デバイス {index + 1}: {deviceDetail.deviceInfo.kind}
+              </h4>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <tbody>
                   <tr>
-                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>deviceId:</td>
-                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.deviceId}</td>
+                    <td
+                      style={{
+                        border: "1px solid #ccc",
+                        padding: "5px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      deviceId:
+                    </td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>
+                      {deviceDetail.deviceInfo.deviceId}
+                    </td>
                   </tr>
                   <tr>
-                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>groupId:</td>
-                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.groupId}</td>
+                    <td
+                      style={{
+                        border: "1px solid #ccc",
+                        padding: "5px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      groupId:
+                    </td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>
+                      {deviceDetail.deviceInfo.groupId}
+                    </td>
                   </tr>
                   <tr>
-                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>label:</td>
-                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.label || "ラベルなし"}</td>
+                    <td
+                      style={{
+                        border: "1px solid #ccc",
+                        padding: "5px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      label:
+                    </td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>
+                      {deviceDetail.deviceInfo.label || "ラベルなし"}
+                    </td>
                   </tr>
                   <tr>
-                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>kind:</td>
-                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.kind}</td>
+                    <td
+                      style={{
+                        border: "1px solid #ccc",
+                        padding: "5px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      kind:
+                    </td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>
+                      {deviceDetail.deviceInfo.kind}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style={{
+                        border: "1px solid #ccc",
+                        padding: "5px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      capabilities:
+                    </td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>
+                      {deviceDetail.capabilities ? (
+                        <pre
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            maxHeight: "300px",
+                            overflow: "auto",
+                          }}
+                        >
+                          {JSON.stringify(deviceDetail.capabilities, null, 2)}
+                        </pre>
+                      ) : (
+                        "取得できませんでした"
+                      )}
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           ))}
         </div>
-        
+
         <h3>Track Information</h3>
         <pre>{JSON.stringify(trackCorrespondences, null, 2)}</pre>
       </div>
