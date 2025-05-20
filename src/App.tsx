@@ -16,7 +16,6 @@ interface CustomConstraints {
   [key: string]: any;
 }
 
-
 const CameraApp = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [trackCorrespondences, setTrackCorrespondences] = useState({});
@@ -25,19 +24,30 @@ const CameraApp = () => {
     width: 0,
     height: 0,
   });
+  // ストリームから取得された実際のデバイスID
+  const [actualDeviceId, setActualDeviceId] = useState<string | null>(null);
+  // デバイスID一致確認の結果
+  const [deviceIdMatch, setDeviceIdMatch] = useState<boolean | null>(null);
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetailInfo[]>([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
-  
+
   // カスタム制約の状態
-  const [customConstraints, setCustomConstraints] = useState<CustomConstraints>({});
+  const [customConstraints, setCustomConstraints] = useState<CustomConstraints>({
+    // 解像度の初期値を設定
+    width: { ideal: 640 },
+    height: { ideal: 480 },
+  });
   // 選択されたデバイスの能力
-  const [currentCapabilities, setCurrentCapabilities] = useState<MediaTrackCapabilities | null>(null);
+  const [currentCapabilities, setCurrentCapabilities] =
+    useState<MediaTrackCapabilities | null>(null);
   // アクティブな制約設定
-  const [activeConstraintKeys, setActiveConstraintKeys] = useState<string[]>([]);
+  const [activeConstraintKeys, setActiveConstraintKeys] = useState<string[]>(
+    [],
+  );
 
   const fetchDevices = async () => {
     try {
@@ -93,49 +103,62 @@ const CameraApp = () => {
   };
 
   // 選択されたデバイスのcapabilitiesを取得
-  const getDeviceCapabilities = useCallback((deviceId: string) => {
-    if (!deviceId) return null;
-    
-    const selectedDevice = deviceDetails.find(
-      (detail) => detail.deviceInfo.deviceId === deviceId
-    );
-    
-    return selectedDevice?.capabilities || null;
-  }, [deviceDetails]);
-  
+  const getDeviceCapabilities = useCallback(
+    (deviceId: string) => {
+      if (!deviceId) return null;
+
+      const selectedDevice = deviceDetails.find(
+        (detail) => detail.deviceInfo.deviceId === deviceId,
+      );
+
+      return selectedDevice?.capabilities || null;
+    },
+    [deviceDetails],
+  );
+
   // deviceIdとcapabilitiesのマッピングを作成
   useEffect(() => {
     if (selectedVideoDevice) {
       const capabilities = getDeviceCapabilities(selectedVideoDevice);
       setCurrentCapabilities(capabilities);
-      
+
       if (capabilities) {
         // capabilitiesからアクティブな制約キーを抽出
-        const keys = Object.keys(capabilities).filter(key => {
+        const keys = Object.keys(capabilities).filter((key) => {
           const value = capabilities[key as keyof MediaTrackCapabilities];
-          return value !== undefined && key !== 'deviceId' && key !== 'groupId';
+          return value !== undefined && key !== "deviceId" && key !== "groupId";
         });
-        
+
         setActiveConstraintKeys(keys);
-        
+
         // カスタム制約の初期値を設定
         const initialConstraints: CustomConstraints = {};
-        
-        keys.forEach(key => {
+
+        // 既存の解像度設定を保持
+        const savedWidthConstraint = customConstraints.width;
+        const savedHeightConstraint = customConstraints.height;
+
+        keys.forEach((key) => {
           const value = capabilities[key as keyof MediaTrackCapabilities];
-          
+
+          // 幅と高さは既存の値を優先
+          if (key === 'width' && savedWidthConstraint) {
+            initialConstraints[key] = savedWidthConstraint;
+          } else if (key === 'height' && savedHeightConstraint) {
+            initialConstraints[key] = savedHeightConstraint;
+          } 
           // 値の型に基づいて初期値を設定
-          if (Array.isArray(value) && value.length > 0) {
+          else if (Array.isArray(value) && value.length > 0) {
             // 配列の場合は最初の値を使用
             initialConstraints[key] = { ideal: value[0] };
-          } else if (typeof value === 'object' && value !== null) {
+          } else if (typeof value === "object" && value !== null) {
             // 範囲オブジェクトの場合
-            if ('min' in value && typeof value.min === 'number') {
+            if ("min" in value && typeof value.min === "number") {
               initialConstraints[key] = { ideal: value.min };
-            } else if ('max' in value && typeof value.max === 'number') {
+            } else if ("max" in value && typeof value.max === "number") {
               initialConstraints[key] = { ideal: value.max };
             }
-          } else if (typeof value === 'boolean') {
+          } else if (typeof value === "boolean") {
             // 真偽値の場合
             initialConstraints[key] = value;
           } else if (value !== undefined) {
@@ -143,16 +166,27 @@ const CameraApp = () => {
             initialConstraints[key] = { ideal: value };
           }
         });
-        
+
+        // デバイスを変更しても解像度は640x480を保持
+        if (!initialConstraints.width && keys.includes('width')) {
+          initialConstraints.width = { ideal: 640 };
+        }
+        if (!initialConstraints.height && keys.includes('height')) {
+          initialConstraints.height = { ideal: 480 };
+        }
+
         setCustomConstraints(initialConstraints);
       } else {
-        // capabilitiesがない場合は状態をクリア
+        // capabilitiesがない場合でも解像度の初期値は保持
         setActiveConstraintKeys([]);
-        setCustomConstraints({});
+        setCustomConstraints({
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        });
       }
     }
   }, [selectedVideoDevice, deviceDetails, getDeviceCapabilities]);
-  
+
   // デバイス変更時の処理
   const handleVideoDeviceChange: ChangeEventHandler<HTMLSelectElement> = (
     event,
@@ -161,37 +195,40 @@ const CameraApp = () => {
     setSelectedVideoDevice(deviceId);
   };
 
-
-
   // 制約オブジェクトを構築
   const buildConstraints = useCallback(() => {
     // ビデオ制約を構築
-    let videoConstraints: any = {};
-    
+    const videoConstraints: Record<string, any> = {};
+
     // deviceIdの設定
     if (selectedVideoDevice) {
       videoConstraints.deviceId = { exact: selectedVideoDevice };
     }
-    
+
     // カスタム制約の追加
-    activeConstraintKeys.forEach(key => {
+    activeConstraintKeys.forEach((key) => {
       if (customConstraints[key] !== undefined) {
         videoConstraints[key] = customConstraints[key];
       }
     });
-    
+
     // オーディオ制約を構築
     let audioConstraints: boolean | MediaTrackConstraints = false;
     if (selectedAudioDevice) {
       audioConstraints = { deviceId: { exact: selectedAudioDevice } };
     }
-    
+
     return {
       video: Object.keys(videoConstraints).length > 0 ? videoConstraints : true,
       audio: audioConstraints,
     };
-  }, [selectedVideoDevice, selectedAudioDevice, activeConstraintKeys, customConstraints]);
-  
+  }, [
+    selectedVideoDevice,
+    selectedAudioDevice,
+    activeConstraintKeys,
+    customConstraints,
+  ]);
+
   const startStream = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError("getUserMedia is not supported in this browser.");
@@ -209,11 +246,28 @@ const CameraApp = () => {
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
+      // トラック情報の処理
       for (const track of stream.getTracks()) {
+        const settings = track.getSettings();
+
+        if (track.kind === "video") {
+          // ビデオトラックの場合はデバイスIDを抽出
+          const trackDeviceId = settings.deviceId;
+          setActualDeviceId(trackDeviceId || null);
+
+          // 指定したデバイスIDと実際のデバイスIDの一致を確認
+          if (selectedVideoDevice && trackDeviceId) {
+            setDeviceIdMatch(selectedVideoDevice === trackDeviceId);
+          } else {
+            setDeviceIdMatch(null);
+          }
+        }
+
+        // トラック情報を保存
         setTrackCorrespondences({
           capabilities: track.getCapabilities(),
           constraints: track.getConstraints(),
-          settings: track.getSettings(),
+          settings: settings,
         });
       }
 
@@ -236,6 +290,11 @@ const CameraApp = () => {
         tracks.forEach((track) => track.stop());
       }
       videoRef.current.srcObject = null;
+
+      // ストリーム停止時にデバイスID関連の状態をリセット
+      setActualDeviceId(null);
+      setDeviceIdMatch(null);
+
       return true;
     }
     return false;
@@ -300,46 +359,74 @@ const CameraApp = () => {
 
       {/* Capabilities フォーム */}
       {activeConstraintKeys.length > 0 && (
-        <div style={{ marginTop: "20px", border: "1px solid #ddd", padding: "10px", borderRadius: "5px" }}>
+        <div
+          style={{
+            marginTop: "20px",
+            border: "1px solid #ddd",
+            padding: "10px",
+            borderRadius: "5px",
+          }}
+        >
           <h3>カメラ制約の設定</h3>
           <p style={{ fontSize: "0.8em", marginBottom: "10px" }}>
             選択したデバイスでサポートされている各種パラメータを設定できます
           </p>
-          
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: "15px" }}>
-            {activeConstraintKeys.map(key => {
-              const capValue = currentCapabilities?.[key as keyof MediaTrackCapabilities];
-              
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+              gap: "15px",
+            }}
+          >
+            {activeConstraintKeys.map((key) => {
+              const capValue =
+                currentCapabilities?.[key as keyof MediaTrackCapabilities];
+
               if (!capValue) return null;
-              
+
               // 値に応じたコントロールを表示
               return (
-                <div key={key} style={{ 
-                  border: "1px solid #eee", 
-                  padding: "10px", 
-                  borderRadius: "4px",
-                  backgroundColor: "#f9f9f9"
-                }}>
-                  <h4 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>{key}</h4>
-                  
+                <div
+                  key={key}
+                  style={{
+                    border: "1px solid #eee",
+                    padding: "10px",
+                    borderRadius: "4px",
+                    backgroundColor: "#f9f9f9",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>
+                    {key}
+                  </h4>
+
                   {/* 配列（facingModeなど）の場合はセレクトボックス */}
                   {Array.isArray(capValue) && (
                     <div>
-                      <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>値</label>
-                      <select 
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.8em",
+                          marginBottom: "3px",
+                        }}
+                      >
+                        値
+                      </label>
+                      <select
                         value={
-                          customConstraints[key]?.exact || 
-                          customConstraints[key]?.ideal || 
+                          customConstraints[key]?.exact ||
+                          customConstraints[key]?.ideal ||
                           ""
                         }
                         onChange={(e) => {
                           const value = e.target.value;
                           setCustomConstraints({
                             ...customConstraints,
-                            [key]: value ? { ideal: value } : undefined
+                            [key]: value ? { ideal: value } : undefined,
                           });
                         }}
                         style={{ width: "100%" }}
+                        disabled={capValue.length === 0}
                       >
                         <option value="">指定なし</option>
                         {capValue.map((val) => (
@@ -348,183 +435,288 @@ const CameraApp = () => {
                           </option>
                         ))}
                       </select>
-                      
-                      {customConstraints[key] && (
+                      {capValue.length === 0 && (
+                        <div style={{ fontSize: "0.8em", color: "#888", marginTop: "3px" }}>
+                          選択肢がありません
+                        </div>
+                      )}
+
+                      {customConstraints[key] && capValue.length > 0 && (
                         <div style={{ marginTop: "5px" }}>
                           <label>
                             <input
                               type="checkbox"
                               checked={!!customConstraints[key]?.exact}
                               onChange={(e) => {
-                                const value = customConstraints[key]?.ideal || customConstraints[key]?.exact;
+                                const value =
+                                  customConstraints[key]?.ideal ||
+                                  customConstraints[key]?.exact;
                                 if (e.target.checked) {
                                   setCustomConstraints({
                                     ...customConstraints,
-                                    [key]: { exact: value }
+                                    [key]: { exact: value },
                                   });
                                 } else {
                                   setCustomConstraints({
                                     ...customConstraints,
-                                    [key]: { ideal: value }
+                                    [key]: { ideal: value },
                                   });
                                 }
                               }}
                             />
-                            <span style={{ fontSize: "0.8em", marginLeft: "5px" }}>exactに設定</span>
+                            <span
+                              style={{ fontSize: "0.8em", marginLeft: "5px" }}
+                            >
+                              exactに設定
+                            </span>
                           </label>
                         </div>
                       )}
                     </div>
                   )}
-                  
+
                   {/* 範囲値（width, height, frameRateなど）の場合 */}
-                  {!Array.isArray(capValue) && typeof capValue === "object" && capValue !== null && 
-                   ('min' in capValue || 'max' in capValue) && (
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>理想値</label>
-                      <input
-                        type="range"
-                        min={capValue.min !== undefined ? capValue.min : 0}
-                        max={capValue.max !== undefined ? capValue.max : 100}
-                        step={(capValue.max && capValue.min && (capValue.max - capValue.min) > 100) ? (capValue.max - capValue.min) / 100 : 1}
-                        value={customConstraints[key]?.ideal || customConstraints[key]?.exact || (capValue.min !== undefined ? capValue.min : 0)}
-                        onChange={(e) => {
-                          const value = Number(e.target.value);
-                          setCustomConstraints({
-                            ...customConstraints,
-                            [key]: { 
-                              ...(customConstraints[key] || {}),
-                              ideal: value
-                            }
-                          });
-                        }}
-                        style={{ width: "100%" }}
-                      />
-                      <div style={{ 
-                        display: "flex", 
-                        justifyContent: "space-between", 
-                        fontSize: "0.7em",
-                        color: "#666" 
-                      }}>
-                        <span>min: {capValue.min !== undefined ? capValue.min : "N/A"}</span>
-                        <span>max: {capValue.max !== undefined ? capValue.max : "N/A"}</span>
-                      </div>
-                      <div style={{ 
-                        textAlign: "center", 
-                        fontSize: "0.8em", 
-                        marginTop: "3px" 
-                      }}>
-                        現在値: {customConstraints[key]?.ideal || customConstraints[key]?.exact || "-"}
-                      </div>
-                      
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
-                        {/* min制約 */}
-                        <div style={{ flexBasis: "48%", flexGrow: 1 }}>
-                          <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>最小値</label>
-                          <input
-                            type="number"
-                            min={capValue.min}
-                            max={capValue.max}
-                            value={customConstraints[key]?.min || ""}
-                            onChange={(e) => {
-                              const value = e.target.value === "" ? undefined : Number(e.target.value);
-                              setCustomConstraints({
-                                ...customConstraints,
-                                [key]: { 
-                                  ...(customConstraints[key] || {}),
-                                  min: value
-                                }
-                              });
-                            }}
-                            style={{ width: "100%" }}
-                          />
-                        </div>
-                        
-                        {/* max制約 */}
-                        <div style={{ flexBasis: "48%", flexGrow: 1 }}>
-                          <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>最大値</label>
-                          <input
-                            type="number"
-                            min={capValue.min}
-                            max={capValue.max}
-                            value={customConstraints[key]?.max || ""}
-                            onChange={(e) => {
-                              const value = e.target.value === "" ? undefined : Number(e.target.value);
-                              setCustomConstraints({
-                                ...customConstraints,
-                                [key]: { 
-                                  ...(customConstraints[key] || {}),
-                                  max: value
-                                }
-                              });
-                            }}
-                            style={{ width: "100%" }}
-                          />
-                        </div>
-                      </div>
-                      
-                      {/* exact制約 */}
-                      <div style={{ marginTop: "8px" }}>
-                        <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>厳密値</label>
+                  {!Array.isArray(capValue) &&
+                    typeof capValue === "object" &&
+                    capValue !== null &&
+                    ("min" in capValue || "max" in capValue) && (
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8em",
+                            marginBottom: "3px",
+                          }}
+                        >
+                          理想値
+                        </label>
                         <input
-                          type="number"
-                          min={capValue.min}
-                          max={capValue.max}
-                          value={customConstraints[key]?.exact || ""}
+                          type="range"
+                          min={capValue.min !== undefined ? capValue.min : 0}
+                          max={capValue.max !== undefined ? capValue.max : 100}
+                          step={
+                            capValue.max &&
+                            capValue.min &&
+                            capValue.max - capValue.min > 100
+                              ? (capValue.max - capValue.min) / 100
+                              : 1
+                          }
+                          value={
+                            customConstraints[key]?.ideal ||
+                            customConstraints[key]?.exact ||
+                            (capValue.min !== undefined ? capValue.min : 0)
+                          }
                           onChange={(e) => {
-                            const value = e.target.value === "" ? undefined : Number(e.target.value);
-                            // exactが設定された場合は他の制約を削除
+                            const value = Number(e.target.value);
                             setCustomConstraints({
                               ...customConstraints,
-                              [key]: value !== undefined ? { exact: value } : {}
+                              [key]: {
+                                ...(customConstraints[key] || {}),
+                                ideal: value,
+                              },
                             });
                           }}
                           style={{ width: "100%" }}
+                          disabled={capValue.min === undefined && capValue.max === undefined}
                         />
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* 真偽値の場合（autoGainControl, echoCancellation など） */}
-                  {Array.isArray(capValue) && capValue.length === 2 && typeof capValue[0] === "boolean" && (
-                    <div>
-                      <div style={{ marginTop: "5px" }}>
-                        <label>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            fontSize: "0.7em",
+                            color: "#666",
+                          }}
+                        >
+                          <span>
+                            min:{" "}
+                            {capValue.min !== undefined ? capValue.min : "N/A"}
+                          </span>
+                          <span>
+                            max:{" "}
+                            {capValue.max !== undefined ? capValue.max : "N/A"}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            textAlign: "center",
+                            fontSize: "0.8em",
+                            marginTop: "3px",
+                          }}
+                        >
+                          現在値:{" "}
+                          {customConstraints[key]?.ideal ||
+                            customConstraints[key]?.exact ||
+                            "-"}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "8px",
+                            marginTop: "8px",
+                          }}
+                        >
+                          {/* min制約 */}
+                          <div style={{ flexBasis: "48%", flexGrow: 1 }}>
+                            <label
+                              style={{
+                                display: "block",
+                                fontSize: "0.8em",
+                                marginBottom: "3px",
+                              }}
+                            >
+                              最小値
+                            </label>
+                            <input
+                              type="number"
+                              min={capValue.min}
+                              max={capValue.max}
+                              value={customConstraints[key]?.min || ""}
+                              onChange={(e) => {
+                                const value =
+                                  e.target.value === ""
+                                    ? undefined
+                                    : Number(e.target.value);
+                                setCustomConstraints({
+                                  ...customConstraints,
+                                  [key]: {
+                                    ...(customConstraints[key] || {}),
+                                    min: value,
+                                  },
+                                });
+                              }}
+                              style={{ width: "100%" }}
+                              disabled={capValue.min === undefined && capValue.max === undefined}
+                            />
+                          </div>
+
+                          {/* max制約 */}
+                          <div style={{ flexBasis: "48%", flexGrow: 1 }}>
+                            <label
+                              style={{
+                                display: "block",
+                                fontSize: "0.8em",
+                                marginBottom: "3px",
+                              }}
+                            >
+                              最大値
+                            </label>
+                            <input
+                              type="number"
+                              min={capValue.min}
+                              max={capValue.max}
+                              value={customConstraints[key]?.max || ""}
+                              onChange={(e) => {
+                                const value =
+                                  e.target.value === ""
+                                    ? undefined
+                                    : Number(e.target.value);
+                                setCustomConstraints({
+                                  ...customConstraints,
+                                  [key]: {
+                                    ...(customConstraints[key] || {}),
+                                    max: value,
+                                  },
+                                });
+                              }}
+                              style={{ width: "100%" }}
+                              disabled={capValue.min === undefined && capValue.max === undefined}
+                            />
+                          </div>
+                        </div>
+
+                        {capValue.min === undefined && capValue.max === undefined && (
+                          <div style={{ fontSize: "0.8em", color: "#888", marginTop: "3px" }}>
+                            値の範囲が未定義です
+                          </div>
+                        )}
+
+                        {/* exact制約 */}
+                        <div style={{ marginTop: "8px" }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8em",
+                              marginBottom: "3px",
+                            }}
+                          >
+                            厳密値
+                          </label>
                           <input
-                            type="checkbox"
-                            checked={!!customConstraints[key]}
+                            type="number"
+                            min={capValue.min}
+                            max={capValue.max}
+                            value={customConstraints[key]?.exact || ""}
                             onChange={(e) => {
+                              const value =
+                                e.target.value === ""
+                                  ? undefined
+                                  : Number(e.target.value);
+                              // exactが設定された場合は他の制約を削除
                               setCustomConstraints({
                                 ...customConstraints,
-                                [key]: e.target.checked
+                                [key]:
+                                  value !== undefined ? { exact: value } : {},
                               });
                             }}
+                            style={{ width: "100%" }}
+                            disabled={capValue.min === undefined && capValue.max === undefined}
                           />
-                          <span style={{ fontSize: "0.9em", marginLeft: "5px" }}>有効にする</span>
-                        </label>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  
+                    )}
+
+                  {/* 真偽値の場合（autoGainControl, echoCancellation など） */}
+                  {Array.isArray(capValue) &&
+                    capValue.length === 2 &&
+                    typeof capValue[0] === "boolean" && (
+                      <div>
+                        <div style={{ marginTop: "5px" }}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={!!customConstraints[key]}
+                              onChange={(e) => {
+                                setCustomConstraints({
+                                  ...customConstraints,
+                                  [key]: e.target.checked,
+                                });
+                              }}
+                            />
+                            <span
+                              style={{ fontSize: "0.9em", marginLeft: "5px" }}
+                            >
+                              有効にする
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
                   {/* その他の型の場合 */}
-                  {!Array.isArray(capValue) && 
-                   (typeof capValue !== "object" || capValue === null || (!('min' in capValue) && !('max' in capValue))) && (
-                    <div style={{ fontSize: "0.8em", color: "#666" }}>
-                      <div>値の型: {typeof capValue}</div>
-                      <pre style={{ 
-                        backgroundColor: "#f0f0f0", 
-                        padding: "5px", 
-                        maxHeight: "100px", 
-                        overflow: "auto", 
-                        fontSize: "0.9em",
-                        marginTop: "5px",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-all"
-                      }}>
-                        {JSON.stringify(capValue, null, 2)}
-                      </pre>
-                    </div>
-                  )}
+                  {!Array.isArray(capValue) &&
+                    (typeof capValue !== "object" ||
+                      capValue === null ||
+                      (!("min" in capValue) && !("max" in capValue))) && (
+                      <div style={{ fontSize: "0.8em", color: "#666" }}>
+                        <div>値の型: {typeof capValue}</div>
+                        <pre
+                          style={{
+                            backgroundColor: "#f0f0f0",
+                            padding: "5px",
+                            maxHeight: "100px",
+                            overflow: "auto",
+                            fontSize: "0.9em",
+                            marginTop: "5px",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {JSON.stringify(capValue, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                 </div>
               );
             })}
@@ -533,33 +725,33 @@ const CameraApp = () => {
       )}
 
       <div style={{ marginTop: "20px" }}>
-        <button 
-          type="button" 
+        <button
+          type="button"
           onClick={startStream}
-          style={{ 
-            padding: "8px 16px", 
-            backgroundColor: "#4CAF50", 
-            color: "white", 
-            border: "none", 
-            borderRadius: "4px", 
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#4CAF50",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
             cursor: "pointer",
-            fontSize: "1em"
+            fontSize: "1em",
           }}
         >
           Start Camera
         </button>
-        <button 
-          type="button" 
+        <button
+          type="button"
           onClick={stopStream}
-          style={{ 
-            padding: "8px 16px", 
-            backgroundColor: "#f44336", 
-            color: "white", 
-            border: "none", 
-            borderRadius: "4px", 
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#f44336",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
             cursor: "pointer",
             fontSize: "1em",
-            marginLeft: "10px" 
+            marginLeft: "10px",
           }}
         >
           Stop Camera
@@ -570,6 +762,84 @@ const CameraApp = () => {
         <p>
           actual resolution: {actualResolution.width}x{actualResolution.height}
         </p>
+
+        {/* デバイスID一致確認の表示 */}
+        {actualDeviceId && (
+          <div
+            style={{
+              marginTop: "10px",
+              padding: "10px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "4px",
+            }}
+          >
+            <h4 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>
+              デバイスID確認
+            </h4>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <tbody>
+                <tr>
+                  <td
+                    style={{
+                      padding: "5px",
+                      borderBottom: "1px solid #ddd",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    指定したデバイスID:
+                  </td>
+                  <td
+                    style={{
+                      padding: "5px",
+                      borderBottom: "1px solid #ddd",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {selectedVideoDevice || "(なし)"}
+                  </td>
+                </tr>
+                <tr>
+                  <td
+                    style={{
+                      padding: "5px",
+                      borderBottom: "1px solid #ddd",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    実際のデバイスID:
+                  </td>
+                  <td
+                    style={{
+                      padding: "5px",
+                      borderBottom: "1px solid #ddd",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {actualDeviceId}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "5px", fontWeight: "bold" }}>
+                    一致状態:
+                  </td>
+                  <td style={{ padding: "5px" }}>
+                    {deviceIdMatch === null ? (
+                      <span style={{ color: "#777" }}>確認不能</span>
+                    ) : deviceIdMatch ? (
+                      <span style={{ color: "#4CAF50", fontWeight: "bold" }}>
+                        一致 ✓
+                      </span>
+                    ) : (
+                      <span style={{ color: "#f44336", fontWeight: "bold" }}>
+                        不一致 ✗
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
