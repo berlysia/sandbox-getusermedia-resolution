@@ -16,6 +16,7 @@ const CameraApp = () => {
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceDetails, setDeviceDetails] = useState<MediaDeviceInfo[]>([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
   const [facingMode, setFacingMode] = useState("");
@@ -32,6 +33,7 @@ const CameraApp = () => {
         track.stop();
       }
       const deviceInfos = await navigator.mediaDevices.enumerateDevices();
+      setDeviceDetails(deviceInfos);
       setVideoDevices(
         deviceInfos.filter((device) => device.kind === "videoinput"),
       );
@@ -374,6 +376,36 @@ const CameraApp = () => {
       ></video>
 
       <div>
+        <h3>Device Information (enumerateDevices結果)</h3>
+        <div>
+          {deviceDetails.map((device, index) => (
+            <div key={index} style={{ marginBottom: "20px", border: "1px solid #ccc", padding: "10px" }}>
+              <h4>デバイス {index + 1}: {device.kind}</h4>
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <tbody>
+                  <tr>
+                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>deviceId:</td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.deviceId}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>groupId:</td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.groupId}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>label:</td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.label || "ラベルなし"}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: "1px solid #ccc", padding: "5px", fontWeight: "bold" }}>kind:</td>
+                    <td style={{ border: "1px solid #ccc", padding: "5px" }}>{device.kind}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+        
+        <h3>Track Information</h3>
         <pre>{JSON.stringify(trackCorrespondences, null, 2)}</pre>
       </div>
     </div>
