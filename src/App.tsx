@@ -11,17 +11,15 @@ interface DeviceDetailInfo {
   capabilities?: MediaTrackCapabilities;
 }
 
+// カスタム制約を保存するための型
+interface CustomConstraints {
+  [key: string]: any;
+}
+
+
 const CameraApp = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [resolution, setResolution] = useState({ width: 640, height: 480 });
   const [trackCorrespondences, setTrackCorrespondences] = useState({});
-  const [useMaxResolution, setUseMaxResolution] = useState(false);
-  const [maxResolution, setMaxResolution] = useState({ width: 0, height: 0 });
-  const [useMinResolution, setUseMinResolution] = useState(false);
-  const [minResolution, setMinResolution] = useState({ width: 0, height: 0 });
-  // 利用可能な幅と高さの範囲
-  const [widthRange, setWidthRange] = useState<{ min?: number; max?: number }>({});
-  const [heightRange, setHeightRange] = useState<{ min?: number; max?: number }>({});
   const [error, setError] = useState("");
   const [actualResolution, setActualResolution] = useState({
     width: 0,
@@ -33,10 +31,13 @@ const CameraApp = () => {
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetailInfo[]>([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
-  const [facingMode, setFacingMode] = useState("");
-  const [availableFacingModes, setAvailableFacingModes] = useState<string[]>(
-    [],
-  );
+  
+  // カスタム制約の状態
+  const [customConstraints, setCustomConstraints] = useState<CustomConstraints>({});
+  // 選択されたデバイスの能力
+  const [currentCapabilities, setCurrentCapabilities] = useState<MediaTrackCapabilities | null>(null);
+  // アクティブな制約設定
+  const [activeConstraintKeys, setActiveConstraintKeys] = useState<string[]>([]);
 
   const fetchDevices = async () => {
     try {
@@ -91,114 +92,106 @@ const CameraApp = () => {
     await fetchDevices();
   };
 
+  // 選択されたデバイスのcapabilitiesを取得
+  const getDeviceCapabilities = useCallback((deviceId: string) => {
+    if (!deviceId) return null;
+    
+    const selectedDevice = deviceDetails.find(
+      (detail) => detail.deviceInfo.deviceId === deviceId
+    );
+    
+    return selectedDevice?.capabilities || null;
+  }, [deviceDetails]);
+  
+  // deviceIdとcapabilitiesのマッピングを作成
+  useEffect(() => {
+    if (selectedVideoDevice) {
+      const capabilities = getDeviceCapabilities(selectedVideoDevice);
+      setCurrentCapabilities(capabilities);
+      
+      if (capabilities) {
+        // capabilitiesからアクティブな制約キーを抽出
+        const keys = Object.keys(capabilities).filter(key => {
+          const value = capabilities[key as keyof MediaTrackCapabilities];
+          return value !== undefined && key !== 'deviceId' && key !== 'groupId';
+        });
+        
+        setActiveConstraintKeys(keys);
+        
+        // カスタム制約の初期値を設定
+        const initialConstraints: CustomConstraints = {};
+        
+        keys.forEach(key => {
+          const value = capabilities[key as keyof MediaTrackCapabilities];
+          
+          // 値の型に基づいて初期値を設定
+          if (Array.isArray(value) && value.length > 0) {
+            // 配列の場合は最初の値を使用
+            initialConstraints[key] = { ideal: value[0] };
+          } else if (typeof value === 'object' && value !== null) {
+            // 範囲オブジェクトの場合
+            if ('min' in value && typeof value.min === 'number') {
+              initialConstraints[key] = { ideal: value.min };
+            } else if ('max' in value && typeof value.max === 'number') {
+              initialConstraints[key] = { ideal: value.max };
+            }
+          } else if (typeof value === 'boolean') {
+            // 真偽値の場合
+            initialConstraints[key] = value;
+          } else if (value !== undefined) {
+            // その他の値の場合
+            initialConstraints[key] = { ideal: value };
+          }
+        });
+        
+        setCustomConstraints(initialConstraints);
+      } else {
+        // capabilitiesがない場合は状態をクリア
+        setActiveConstraintKeys([]);
+        setCustomConstraints({});
+      }
+    }
+  }, [selectedVideoDevice, deviceDetails, getDeviceCapabilities]);
+  
+  // デバイス変更時の処理
   const handleVideoDeviceChange: ChangeEventHandler<HTMLSelectElement> = (
     event,
   ) => {
     const deviceId = event.currentTarget.value;
     setSelectedVideoDevice(deviceId);
-
-    // デバイス変更時にcapabilitiesに基づいて設定を更新
-    updateDeviceCapabilitiesOptions(deviceId);
   };
 
-  // デバイスが変更されたときにcapabilities情報に基づいて設定を更新
-  const updateDeviceCapabilitiesOptions = useCallback(
-    (deviceId: string) => {
-      if (!deviceId) {
-        // デバイスが選択されていない場合は設定をクリア
-        setAvailableFacingModes([]);
-        setFacingMode("");
-        setWidthRange({});
-        setHeightRange({});
-        return;
-      }
 
-      const selectedDevice = deviceDetails.find(
-        (detail) => detail.deviceInfo.deviceId === deviceId,
-      );
 
-      const capabilities = selectedDevice?.capabilities;
-      if (!capabilities) {
-        // 選択されたデバイスのcapabilitiesがなければ設定をクリア
-        setAvailableFacingModes([]);
-        setFacingMode("");
-        setWidthRange({});
-        setHeightRange({});
-        return;
-      }
-
-      // ======= facingMode の設定更新 =======
-      if (capabilities.facingMode) {
-        // 利用可能なfacingModeを更新
-        const modes = Array.isArray(capabilities.facingMode)
-          ? capabilities.facingMode
-          : [];
-
-        setAvailableFacingModes(modes);
-
-        // 現在選択されているfacingModeが利用可能かどうかチェック
-        if (facingMode && !modes.includes(facingMode)) {
-          // 現在のfacingModeが利用できない場合はクリア
-          setFacingMode("");
-        }
-      } else {
-        setAvailableFacingModes([]);
-        setFacingMode("");
-      }
-
-      // ======= 解像度範囲の設定更新 =======
-      if (capabilities.width) {
-        const width: { min?: number; max?: number } = {};
-        
-        if (typeof capabilities.width.min === 'number') {
-          width.min = capabilities.width.min;
-        }
-        
-        if (typeof capabilities.width.max === 'number') {
-          width.max = capabilities.width.max;
-        }
-        
-        setWidthRange(width);
-      } else {
-        setWidthRange({});
-      }
-
-      if (capabilities.height) {
-        const height: { min?: number; max?: number } = {};
-        
-        if (typeof capabilities.height.min === 'number') {
-          height.min = capabilities.height.min;
-        }
-        
-        if (typeof capabilities.height.max === 'number') {
-          height.max = capabilities.height.max;
-        }
-        
-        setHeightRange(height);
-      } else {
-        setHeightRange({});
-      }
-    },
-    [deviceDetails, facingMode],
-  );
-
-  // デバイスの詳細情報が更新されたとき、選択されているデバイスのcapabilities情報を更新
-  useEffect(() => {
+  // 制約オブジェクトを構築
+  const buildConstraints = useCallback(() => {
+    // ビデオ制約を構築
+    let videoConstraints: any = {};
+    
+    // deviceIdの設定
     if (selectedVideoDevice) {
-      updateDeviceCapabilitiesOptions(selectedVideoDevice);
+      videoConstraints.deviceId = { exact: selectedVideoDevice };
     }
-  }, [deviceDetails, selectedVideoDevice, updateDeviceCapabilitiesOptions]);
-
-  const getSelectedDeviceCapabilities = () => {
-    if (!selectedVideoDevice) return null;
-
-    const selectedDevice = deviceDetails.find(
-      (detail) => detail.deviceInfo.deviceId === selectedVideoDevice,
-    );
-
-    return selectedDevice?.capabilities || null;
-  };
-
+    
+    // カスタム制約の追加
+    activeConstraintKeys.forEach(key => {
+      if (customConstraints[key] !== undefined) {
+        videoConstraints[key] = customConstraints[key];
+      }
+    });
+    
+    // オーディオ制約を構築
+    let audioConstraints: boolean | MediaTrackConstraints = false;
+    if (selectedAudioDevice) {
+      audioConstraints = { deviceId: { exact: selectedAudioDevice } };
+    }
+    
+    return {
+      video: Object.keys(videoConstraints).length > 0 ? videoConstraints : true,
+      audio: audioConstraints,
+    };
+  }, [selectedVideoDevice, selectedAudioDevice, activeConstraintKeys, customConstraints]);
+  
   const startStream = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError("getUserMedia is not supported in this browser.");
@@ -212,50 +205,7 @@ const CameraApp = () => {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
-      // 選択されたデバイスのcapabilitiesを取得
-      const deviceCapabilities = getSelectedDeviceCapabilities();
-
-      // facingModeの指定方法を決定
-      let facingModeConstraint = {};
-      if (facingMode && deviceCapabilities?.facingMode) {
-        // capabilitiesに含まれるfacingModeの値を確認
-        const availableFacingModes = Array.isArray(
-          deviceCapabilities.facingMode,
-        )
-          ? deviceCapabilities.facingMode
-          : [];
-
-        // 指定されたfacingModeが利用可能な場合のみ設定
-        if (availableFacingModes.includes(facingMode)) {
-          facingModeConstraint = { facingMode };
-        }
-      }
-
-      const constraints: MediaStreamConstraints = {
-        ...(selectedVideoDevice && {
-          deviceId: { exact: selectedVideoDevice },
-        }),
-        video:
-          useMaxResolution || useMinResolution
-            ? {
-                ...facingModeConstraint,
-                width: {
-                  ideal: resolution.width,
-                  ...(useMaxResolution ? { max: maxResolution.width } : {}),
-                  ...(useMinResolution ? { min: minResolution.width } : {}),
-                },
-                height: {
-                  ideal: resolution.height,
-                  ...(useMaxResolution ? { max: maxResolution.height } : {}),
-                  ...(useMinResolution ? { min: minResolution.height } : {}),
-                },
-              }
-            : {
-                width: resolution.width,
-                height: resolution.height,
-                ...facingModeConstraint,
-              },
-      };
+      const constraints = buildConstraints();
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
@@ -348,198 +298,270 @@ const CameraApp = () => {
         </button>
       </div>
 
-      <div>
-        <label>
-          Select Facing Mode:
-          <select
-            onChange={(e) => setFacingMode(e.currentTarget.value)}
-            value={facingMode}
-            disabled={availableFacingModes.length === 0}
-          >
-            <option value="">None</option>
-            {availableFacingModes.map((mode) => (
-              <option key={mode} value={mode}>
-                {mode}
-              </option>
-            ))}
-          </select>
-        </label>
-        {availableFacingModes.length === 0 ? (
-          <div style={{ fontSize: "0.8em", marginTop: "5px", color: "#888" }}>
-            選択したデバイスではfacingModeがサポートされていません
-          </div>
-        ) : (
-          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
-            利用可能なfacingMode: {availableFacingModes.join(", ")}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label>
-          Select Resolution:
-          <select
-            id="resolution"
-            onChange={(event) => {
-              const [width, height] = event.currentTarget.value
-                .split("x")
-                .map(Number);
-              setResolution({ width, height });
-            }}
-            defaultValue="640x480"
-          >
-            <option value="640x480">640x480</option>
-            <option value="1280x720">1280x720</option>
-            <option value="1920x1080">1920x1080</option>
-          </select>
-        </label>
-      </div>
-      <div>
-        <label>
-          Custom Resolution:
-          <input
-            type="text"
-            placeholder="width"
-            value={resolution.width}
-            onChange={(e) => {
-              setResolution({
-                width: Number(e.target.value),
-                height: resolution.height,
-              });
-            }}
-          />
-          x
-          <input
-            type="text"
-            placeholder="height"
-            value={resolution.height}
-            onChange={(e) => {
-              setResolution({
-                width: resolution.width,
-                height: Number(e.target.value),
-              });
-            }}
-          />
-        </label>
-        {(widthRange.min !== undefined || widthRange.max !== undefined || 
-          heightRange.min !== undefined || heightRange.max !== undefined) && (
-          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
-            利用可能な解像度範囲: 
-            {widthRange.min !== undefined && ` 幅 ${widthRange.min}`}
-            {widthRange.max !== undefined && ` 〜 ${widthRange.max}`}
-            {heightRange.min !== undefined && `, 高さ ${heightRange.min}`}
-            {heightRange.max !== undefined && ` 〜 ${heightRange.max}`}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label>
-          Use Max Resolution:
-          <input
-            type="checkbox"
-            checked={useMaxResolution}
-            onChange={(e) => {
-              setUseMaxResolution(e.target.checked);
+      {/* Capabilities フォーム */}
+      {activeConstraintKeys.length > 0 && (
+        <div style={{ marginTop: "20px", border: "1px solid #ddd", padding: "10px", borderRadius: "5px" }}>
+          <h3>カメラ制約の設定</h3>
+          <p style={{ fontSize: "0.8em", marginBottom: "10px" }}>
+            選択したデバイスでサポートされている各種パラメータを設定できます
+          </p>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: "15px" }}>
+            {activeConstraintKeys.map(key => {
+              const capValue = currentCapabilities?.[key as keyof MediaTrackCapabilities];
               
-              // チェックされた場合、capabilitiesから取得した最大値を設定
-              if (e.target.checked && widthRange.max && heightRange.max) {
-                setMaxResolution({
-                  width: widthRange.max,
-                  height: heightRange.max,
-                });
-              }
-            }}
-          />
-        </label>
-        <input
-          type="text"
-          placeholder="width"
-          value={maxResolution.width || ""}
-          disabled={!useMaxResolution}
-          onChange={(e) => {
-            setMaxResolution({
-              width: Number(e.target.value),
-              height: maxResolution.height,
-            });
-          }}
-        />
-        x
-        <input
-          type="text"
-          placeholder="height"
-          value={maxResolution.height || ""}
-          disabled={!useMaxResolution}
-          onChange={(e) => {
-            setMaxResolution({
-              width: maxResolution.width,
-              height: Number(e.target.value),
-            });
-          }}
-        />
-        {useMaxResolution && widthRange.max && heightRange.max && (
-          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
-            サポートされている最大解像度: {widthRange.max}x{heightRange.max}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label>
-          Use Min Resolution:
-          <input
-            type="checkbox"
-            checked={useMinResolution}
-            onChange={(e) => {
-              setUseMinResolution(e.target.checked);
+              if (!capValue) return null;
               
-              // チェックされた場合、capabilitiesから取得した最小値を設定
-              if (e.target.checked && widthRange.min && heightRange.min) {
-                setMinResolution({
-                  width: widthRange.min,
-                  height: heightRange.min,
-                });
-              }
-            }}
-          />
-        </label>
-        <input
-          type="text"
-          placeholder="width"
-          value={minResolution.width || ""}
-          disabled={!useMinResolution}
-          onChange={(e) => {
-            setMinResolution({
-              width: Number(e.target.value),
-              height: minResolution.height,
-            });
-          }}
-        />
-        x
-        <input
-          type="text"
-          placeholder="height"
-          value={minResolution.height || ""}
-          disabled={!useMinResolution}
-          onChange={(e) => {
-            setMinResolution({
-              width: minResolution.width,
-              height: Number(e.target.value),
-            });
-          }}
-        />
-        {useMinResolution && widthRange.min && heightRange.min && (
-          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
-            サポートされている最小解像度: {widthRange.min}x{heightRange.min}
+              // 値に応じたコントロールを表示
+              return (
+                <div key={key} style={{ 
+                  border: "1px solid #eee", 
+                  padding: "10px", 
+                  borderRadius: "4px",
+                  backgroundColor: "#f9f9f9"
+                }}>
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>{key}</h4>
+                  
+                  {/* 配列（facingModeなど）の場合はセレクトボックス */}
+                  {Array.isArray(capValue) && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>値</label>
+                      <select 
+                        value={
+                          customConstraints[key]?.exact || 
+                          customConstraints[key]?.ideal || 
+                          ""
+                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setCustomConstraints({
+                            ...customConstraints,
+                            [key]: value ? { ideal: value } : undefined
+                          });
+                        }}
+                        style={{ width: "100%" }}
+                      >
+                        <option value="">指定なし</option>
+                        {capValue.map((val) => (
+                          <option key={String(val)} value={String(val)}>
+                            {val}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      {customConstraints[key] && (
+                        <div style={{ marginTop: "5px" }}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={!!customConstraints[key]?.exact}
+                              onChange={(e) => {
+                                const value = customConstraints[key]?.ideal || customConstraints[key]?.exact;
+                                if (e.target.checked) {
+                                  setCustomConstraints({
+                                    ...customConstraints,
+                                    [key]: { exact: value }
+                                  });
+                                } else {
+                                  setCustomConstraints({
+                                    ...customConstraints,
+                                    [key]: { ideal: value }
+                                  });
+                                }
+                              }}
+                            />
+                            <span style={{ fontSize: "0.8em", marginLeft: "5px" }}>exactに設定</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* 範囲値（width, height, frameRateなど）の場合 */}
+                  {!Array.isArray(capValue) && typeof capValue === "object" && capValue !== null && 
+                   ('min' in capValue || 'max' in capValue) && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>理想値</label>
+                      <input
+                        type="range"
+                        min={capValue.min !== undefined ? capValue.min : 0}
+                        max={capValue.max !== undefined ? capValue.max : 100}
+                        step={(capValue.max && capValue.min && (capValue.max - capValue.min) > 100) ? (capValue.max - capValue.min) / 100 : 1}
+                        value={customConstraints[key]?.ideal || customConstraints[key]?.exact || (capValue.min !== undefined ? capValue.min : 0)}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          setCustomConstraints({
+                            ...customConstraints,
+                            [key]: { 
+                              ...(customConstraints[key] || {}),
+                              ideal: value
+                            }
+                          });
+                        }}
+                        style={{ width: "100%" }}
+                      />
+                      <div style={{ 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        fontSize: "0.7em",
+                        color: "#666" 
+                      }}>
+                        <span>min: {capValue.min !== undefined ? capValue.min : "N/A"}</span>
+                        <span>max: {capValue.max !== undefined ? capValue.max : "N/A"}</span>
+                      </div>
+                      <div style={{ 
+                        textAlign: "center", 
+                        fontSize: "0.8em", 
+                        marginTop: "3px" 
+                      }}>
+                        現在値: {customConstraints[key]?.ideal || customConstraints[key]?.exact || "-"}
+                      </div>
+                      
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                        {/* min制約 */}
+                        <div style={{ flexBasis: "48%", flexGrow: 1 }}>
+                          <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>最小値</label>
+                          <input
+                            type="number"
+                            min={capValue.min}
+                            max={capValue.max}
+                            value={customConstraints[key]?.min || ""}
+                            onChange={(e) => {
+                              const value = e.target.value === "" ? undefined : Number(e.target.value);
+                              setCustomConstraints({
+                                ...customConstraints,
+                                [key]: { 
+                                  ...(customConstraints[key] || {}),
+                                  min: value
+                                }
+                              });
+                            }}
+                            style={{ width: "100%" }}
+                          />
+                        </div>
+                        
+                        {/* max制約 */}
+                        <div style={{ flexBasis: "48%", flexGrow: 1 }}>
+                          <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>最大値</label>
+                          <input
+                            type="number"
+                            min={capValue.min}
+                            max={capValue.max}
+                            value={customConstraints[key]?.max || ""}
+                            onChange={(e) => {
+                              const value = e.target.value === "" ? undefined : Number(e.target.value);
+                              setCustomConstraints({
+                                ...customConstraints,
+                                [key]: { 
+                                  ...(customConstraints[key] || {}),
+                                  max: value
+                                }
+                              });
+                            }}
+                            style={{ width: "100%" }}
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* exact制約 */}
+                      <div style={{ marginTop: "8px" }}>
+                        <label style={{ display: "block", fontSize: "0.8em", marginBottom: "3px" }}>厳密値</label>
+                        <input
+                          type="number"
+                          min={capValue.min}
+                          max={capValue.max}
+                          value={customConstraints[key]?.exact || ""}
+                          onChange={(e) => {
+                            const value = e.target.value === "" ? undefined : Number(e.target.value);
+                            // exactが設定された場合は他の制約を削除
+                            setCustomConstraints({
+                              ...customConstraints,
+                              [key]: value !== undefined ? { exact: value } : {}
+                            });
+                          }}
+                          style={{ width: "100%" }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 真偽値の場合（autoGainControl, echoCancellation など） */}
+                  {Array.isArray(capValue) && capValue.length === 2 && typeof capValue[0] === "boolean" && (
+                    <div>
+                      <div style={{ marginTop: "5px" }}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={!!customConstraints[key]}
+                            onChange={(e) => {
+                              setCustomConstraints({
+                                ...customConstraints,
+                                [key]: e.target.checked
+                              });
+                            }}
+                          />
+                          <span style={{ fontSize: "0.9em", marginLeft: "5px" }}>有効にする</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* その他の型の場合 */}
+                  {!Array.isArray(capValue) && 
+                   (typeof capValue !== "object" || capValue === null || (!('min' in capValue) && !('max' in capValue))) && (
+                    <div style={{ fontSize: "0.8em", color: "#666" }}>
+                      <div>値の型: {typeof capValue}</div>
+                      <pre style={{ 
+                        backgroundColor: "#f0f0f0", 
+                        padding: "5px", 
+                        maxHeight: "100px", 
+                        overflow: "auto", 
+                        fontSize: "0.9em",
+                        marginTop: "5px",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-all"
+                      }}>
+                        {JSON.stringify(capValue, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div>
-        <button type="button" onClick={startStream}>
+      <div style={{ marginTop: "20px" }}>
+        <button 
+          type="button" 
+          onClick={startStream}
+          style={{ 
+            padding: "8px 16px", 
+            backgroundColor: "#4CAF50", 
+            color: "white", 
+            border: "none", 
+            borderRadius: "4px", 
+            cursor: "pointer",
+            fontSize: "1em"
+          }}
+        >
           Start Camera
         </button>
-        <button type="button" onClick={stopStream}>
+        <button 
+          type="button" 
+          onClick={stopStream}
+          style={{ 
+            padding: "8px 16px", 
+            backgroundColor: "#f44336", 
+            color: "white", 
+            border: "none", 
+            borderRadius: "4px", 
+            cursor: "pointer",
+            fontSize: "1em",
+            marginLeft: "10px" 
+          }}
+        >
           Stop Camera
         </button>
       </div>
