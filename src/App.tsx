@@ -134,8 +134,8 @@ const CameraApp = () => {
         // width, height, facingModeを優先して並べ替え
         const priorityKeys = ["width", "height", "facingMode"];
         keys = [
-          ...priorityKeys.filter(key => keys.includes(key)),
-          ...keys.filter(key => !priorityKeys.includes(key))
+          ...priorityKeys.filter((key) => keys.includes(key)),
+          ...keys.filter((key) => !priorityKeys.includes(key)),
         ];
 
         setActiveConstraintKeys(keys);
@@ -220,7 +220,7 @@ const CameraApp = () => {
 
     // deviceIdの設定（exact指定のトグル対応）
     if (selectedVideoDevice) {
-      videoConstraints.deviceId = useExactDeviceId 
+      videoConstraints.deviceId = useExactDeviceId
         ? { exact: selectedVideoDevice }
         : { ideal: selectedVideoDevice };
     }
@@ -235,10 +235,10 @@ const CameraApp = () => {
     // オーディオ制約を構築
     let audioConstraints: boolean | MediaTrackConstraints = false;
     if (selectedAudioDevice) {
-      audioConstraints = { 
+      audioConstraints = {
         deviceId: useExactAudioDeviceId
           ? { exact: selectedAudioDevice }
-          : { ideal: selectedAudioDevice }
+          : { ideal: selectedAudioDevice },
       };
     }
 
@@ -248,9 +248,11 @@ const CameraApp = () => {
     };
   }, [
     selectedVideoDevice,
-    selectedAudioDevice,
     activeConstraintKeys,
+    selectedAudioDevice,
+    useExactDeviceId,
     customConstraints,
+    useExactAudioDeviceId,
   ]);
 
   const startStream = async () => {
@@ -455,7 +457,13 @@ const CameraApp = () => {
                   {/* 配列（facingModeなど）の場合はセレクトボックス */}
                   {Array.isArray(capValue) && (
                     <div>
-                      <div style={{ display: "flex", alignItems: "center", marginBottom: "5px" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          marginBottom: "5px",
+                        }}
+                      >
                         <label
                           style={{
                             display: "block",
@@ -467,7 +475,10 @@ const CameraApp = () => {
                           値
                         </label>
                         {/* 配列要素が真偽値の場合を除いて、有効・無効の切り替えを表示 */}
-                        {!(capValue.length === 2 && typeof capValue[0] === "boolean") && (
+                        {!(
+                          capValue.length === 2 &&
+                          typeof capValue[0] === "boolean"
+                        ) && (
                           <label style={{ fontSize: "0.8em" }}>
                             <input
                               type="checkbox"
@@ -475,7 +486,9 @@ const CameraApp = () => {
                               onChange={(e) => {
                                 if (!e.target.checked) {
                                   // 値を未指定に（キー自体を削除）
-                                  const newConstraints = { ...customConstraints };
+                                  const newConstraints = {
+                                    ...customConstraints,
+                                  };
                                   delete newConstraints[key];
                                   setCustomConstraints(newConstraints);
                                 } else if (capValue.length > 0) {
@@ -505,7 +518,10 @@ const CameraApp = () => {
                           });
                         }}
                         style={{ width: "100%" }}
-                        disabled={customConstraints[key] === undefined || capValue.length === 0}
+                        disabled={
+                          customConstraints[key] === undefined ||
+                          capValue.length === 0
+                        }
                       >
                         <option value="">指定なし</option>
                         {capValue.map((val) => (
@@ -526,37 +542,42 @@ const CameraApp = () => {
                         </div>
                       )}
 
-                      {customConstraints[key] !== undefined && capValue.length > 0 && !(capValue.length === 2 && typeof capValue[0] === "boolean") && (
-                        <div style={{ marginTop: "5px" }}>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={!!customConstraints[key]?.exact}
-                              onChange={(e) => {
-                                const value =
-                                  customConstraints[key]?.ideal ||
-                                  customConstraints[key]?.exact;
-                                if (e.target.checked) {
-                                  setCustomConstraints({
-                                    ...customConstraints,
-                                    [key]: { exact: value },
-                                  });
-                                } else {
-                                  setCustomConstraints({
-                                    ...customConstraints,
-                                    [key]: { ideal: value },
-                                  });
-                                }
-                              }}
-                            />
-                            <span
-                              style={{ fontSize: "0.8em", marginLeft: "5px" }}
-                            >
-                              exactに設定
-                            </span>
-                          </label>
-                        </div>
-                      )}
+                      {customConstraints[key] !== undefined &&
+                        capValue.length > 0 &&
+                        !(
+                          capValue.length === 2 &&
+                          typeof capValue[0] === "boolean"
+                        ) && (
+                          <div style={{ marginTop: "5px" }}>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={!!customConstraints[key]?.exact}
+                                onChange={(e) => {
+                                  const value =
+                                    customConstraints[key]?.ideal ||
+                                    customConstraints[key]?.exact;
+                                  if (e.target.checked) {
+                                    setCustomConstraints({
+                                      ...customConstraints,
+                                      [key]: { exact: value },
+                                    });
+                                  } else {
+                                    setCustomConstraints({
+                                      ...customConstraints,
+                                      [key]: { ideal: value },
+                                    });
+                                  }
+                                }}
+                              />
+                              <span
+                                style={{ fontSize: "0.8em", marginLeft: "5px" }}
+                              >
+                                exactに設定
+                              </span>
+                            </label>
+                          </div>
+                        )}
                     </div>
                   )}
 
@@ -566,7 +587,13 @@ const CameraApp = () => {
                     capValue !== null &&
                     ("min" in capValue || "max" in capValue) && (
                       <div>
-                        <div style={{ display: "flex", alignItems: "center", marginBottom: "5px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            marginBottom: "5px",
+                          }}
+                        >
                           <label
                             style={{
                               display: "block",
@@ -584,12 +611,17 @@ const CameraApp = () => {
                               onChange={(e) => {
                                 if (!e.target.checked) {
                                   // 値を未指定に（キー自体を削除）
-                                  const newConstraints = { ...customConstraints };
+                                  const newConstraints = {
+                                    ...customConstraints,
+                                  };
                                   delete newConstraints[key];
                                   setCustomConstraints(newConstraints);
                                 } else {
                                   // デフォルト値を設定
-                                  const defaultValue = capValue.min !== undefined ? capValue.min : 0;
+                                  const defaultValue =
+                                    capValue.min !== undefined
+                                      ? capValue.min
+                                      : 0;
                                   setCustomConstraints({
                                     ...customConstraints,
                                     [key]: { ideal: defaultValue },
@@ -628,9 +660,9 @@ const CameraApp = () => {
                           }}
                           style={{ width: "100%" }}
                           disabled={
-                            customConstraints[key] === undefined || 
+                            customConstraints[key] === undefined ||
                             (capValue.min === undefined &&
-                            capValue.max === undefined)
+                              capValue.max === undefined)
                           }
                         />
                         <div
@@ -704,7 +736,7 @@ const CameraApp = () => {
                               disabled={
                                 customConstraints[key] === undefined ||
                                 (capValue.min === undefined &&
-                                capValue.max === undefined)
+                                  capValue.max === undefined)
                               }
                             />
                           </div>
@@ -742,7 +774,7 @@ const CameraApp = () => {
                               disabled={
                                 customConstraints[key] === undefined ||
                                 (capValue.min === undefined &&
-                                capValue.max === undefined)
+                                  capValue.max === undefined)
                               }
                             />
                           </div>
@@ -791,9 +823,9 @@ const CameraApp = () => {
                             }}
                             style={{ width: "100%" }}
                             disabled={
-                              customConstraints[key] === undefined || 
+                              customConstraints[key] === undefined ||
                               (capValue.min === undefined &&
-                              capValue.max === undefined)
+                                capValue.max === undefined)
                             }
                           />
                         </div>
@@ -819,7 +851,9 @@ const CameraApp = () => {
                                   });
                                 } else {
                                   // 値を未指定にする（項目を削除）
-                                  const newConstraints = { ...customConstraints };
+                                  const newConstraints = {
+                                    ...customConstraints,
+                                  };
                                   delete newConstraints[key];
                                   setCustomConstraints(newConstraints);
                                 }
@@ -836,40 +870,49 @@ const CameraApp = () => {
                     )}
 
                   {/* 真偽値（Boolean型）の即値の場合 */}
-                  {!Array.isArray(capValue) && typeof capValue === "boolean" && (
-                    <div>
-                      <div style={{ marginTop: "5px" }}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={!!customConstraints[key]}
-                            onChange={(e) => {
-                              // チェックボックスがオンならvalueを設定、オフなら未設定にする
-                              if (e.target.checked) {
-                                setCustomConstraints({
-                                  ...customConstraints,
-                                  [key]: true,
-                                });
-                              } else {
-                                // 値を未指定にする（項目を削除）
-                                const newConstraints = { ...customConstraints };
-                                delete newConstraints[key];
-                                setCustomConstraints(newConstraints);
-                              }
-                            }}
-                          />
-                          <span
-                            style={{ fontSize: "0.9em", marginLeft: "5px" }}
-                          >
-                            有効にする
-                          </span>
-                        </label>
+                  {!Array.isArray(capValue) &&
+                    typeof capValue === "boolean" && (
+                      <div>
+                        <div style={{ marginTop: "5px" }}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={!!customConstraints[key]}
+                              onChange={(e) => {
+                                // チェックボックスがオンならvalueを設定、オフなら未設定にする
+                                if (e.target.checked) {
+                                  setCustomConstraints({
+                                    ...customConstraints,
+                                    [key]: true,
+                                  });
+                                } else {
+                                  // 値を未指定にする（項目を削除）
+                                  const newConstraints = {
+                                    ...customConstraints,
+                                  };
+                                  delete newConstraints[key];
+                                  setCustomConstraints(newConstraints);
+                                }
+                              }}
+                            />
+                            <span
+                              style={{ fontSize: "0.9em", marginLeft: "5px" }}
+                            >
+                              有効にする
+                            </span>
+                          </label>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "0.8em",
+                            color: "#666",
+                            marginTop: "3px",
+                          }}
+                        >
+                          デフォルト値: {capValue ? "true" : "false"}
+                        </div>
                       </div>
-                      <div style={{ fontSize: "0.8em", color: "#666", marginTop: "3px" }}>
-                        デフォルト値: {capValue ? "true" : "false"}
-                      </div>
-                    </div>
-                  )}
+                    )}
 
                   {/* その他の型の場合 */}
                   {!Array.isArray(capValue) &&
