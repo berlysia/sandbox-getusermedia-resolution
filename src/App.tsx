@@ -126,10 +126,17 @@ const CameraApp = () => {
 
       if (capabilities) {
         // capabilitiesからアクティブな制約キーを抽出
-        const keys = Object.keys(capabilities).filter((key) => {
+        let keys = Object.keys(capabilities).filter((key) => {
           const value = capabilities[key as keyof MediaTrackCapabilities];
           return value !== undefined && key !== "deviceId" && key !== "groupId";
         });
+
+        // width, height, facingModeを優先して並べ替え
+        const priorityKeys = ["width", "height", "facingMode"];
+        keys = [
+          ...priorityKeys.filter(key => keys.includes(key)),
+          ...keys.filter(key => !priorityKeys.includes(key))
+        ];
 
         setActiveConstraintKeys(keys);
 
@@ -139,34 +146,32 @@ const CameraApp = () => {
         // 既存の解像度設定を保持
         const savedWidthConstraint = customConstraints.width;
         const savedHeightConstraint = customConstraints.height;
+        const savedFacingModeConstraint = customConstraints.facingMode;
 
         keys.forEach((key) => {
           const value = capabilities[key as keyof MediaTrackCapabilities];
 
-          // 幅と高さは既存の値を優先
-          if (key === "width" && savedWidthConstraint) {
-            initialConstraints[key] = savedWidthConstraint;
-          } else if (key === "height" && savedHeightConstraint) {
-            initialConstraints[key] = savedHeightConstraint;
-          }
-          // 値の型に基づいて初期値を設定
-          else if (Array.isArray(value) && value.length > 0) {
-            // 配列の場合は最初の値を使用
-            initialConstraints[key] = { ideal: value[0] };
-          } else if (typeof value === "object" && value !== null) {
-            // 範囲オブジェクトの場合
-            if ("min" in value && typeof value.min === "number") {
-              initialConstraints[key] = { ideal: value.min };
-            } else if ("max" in value && typeof value.max === "number") {
-              initialConstraints[key] = { ideal: value.max };
+          // width, height, facingModeは設定を有効にする
+          if (key === "width") {
+            if (savedWidthConstraint) {
+              initialConstraints[key] = savedWidthConstraint;
+            } else if (keys.includes("width")) {
+              initialConstraints[key] = { ideal: 640 };
             }
-          } else if (typeof value === "boolean") {
-            // 真偽値の場合
-            initialConstraints[key] = value;
-          } else if (value !== undefined) {
-            // その他の値の場合
-            initialConstraints[key] = { ideal: value };
+          } else if (key === "height") {
+            if (savedHeightConstraint) {
+              initialConstraints[key] = savedHeightConstraint;
+            } else if (keys.includes("height")) {
+              initialConstraints[key] = { ideal: 480 };
+            }
+          } else if (key === "facingMode") {
+            if (savedFacingModeConstraint) {
+              initialConstraints[key] = savedFacingModeConstraint;
+            } else if (Array.isArray(value) && value.length > 0) {
+              initialConstraints[key] = { ideal: value[0] };
+            }
           }
+          // その他のプロパティは初期値を未指定にする（設定なし）
         });
 
         // デバイスを変更しても解像度は640x480を保持
@@ -179,11 +184,12 @@ const CameraApp = () => {
 
         setCustomConstraints(initialConstraints);
       } else {
-        // capabilitiesがない場合でも解像度の初期値は保持
+        // capabilitiesがない場合でも基本的な解像度設定は保持
         setActiveConstraintKeys([]);
         setCustomConstraints({
           width: { ideal: 640 },
           height: { ideal: 480 },
+          // facingModeは設定しない（デバイスによって異なるため）
         });
       }
     }
@@ -203,14 +209,20 @@ const CameraApp = () => {
     setSelectedVideoDevice(deviceId);
   };
 
+  // デバイスIDのexact指定を制御する状態
+  const [useExactDeviceId, setUseExactDeviceId] = useState(true);
+  const [useExactAudioDeviceId, setUseExactAudioDeviceId] = useState(true);
+
   // 制約オブジェクトを構築
   const buildConstraints = useCallback(() => {
     // ビデオ制約を構築
     const videoConstraints: Record<string, any> = {};
 
-    // deviceIdの設定
+    // deviceIdの設定（exact指定のトグル対応）
     if (selectedVideoDevice) {
-      videoConstraints.deviceId = { exact: selectedVideoDevice };
+      videoConstraints.deviceId = useExactDeviceId 
+        ? { exact: selectedVideoDevice }
+        : { ideal: selectedVideoDevice };
     }
 
     // カスタム制約の追加
@@ -223,7 +235,11 @@ const CameraApp = () => {
     // オーディオ制約を構築
     let audioConstraints: boolean | MediaTrackConstraints = false;
     if (selectedAudioDevice) {
-      audioConstraints = { deviceId: { exact: selectedAudioDevice } };
+      audioConstraints = { 
+        deviceId: useExactAudioDeviceId
+          ? { exact: selectedAudioDevice }
+          : { ideal: selectedAudioDevice }
+      };
     }
 
     return {
@@ -338,6 +354,20 @@ const CameraApp = () => {
             ))}
           </select>
         </label>
+        {selectedVideoDevice && (
+          <div style={{ marginTop: "5px", marginLeft: "10px" }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={useExactDeviceId}
+                onChange={(e) => setUseExactDeviceId(e.target.checked)}
+              />
+              <span style={{ fontSize: "0.9em", marginLeft: "5px" }}>
+                deviceIdをexactに設定
+              </span>
+            </label>
+          </div>
+        )}
       </div>
 
       <div>
@@ -357,6 +387,20 @@ const CameraApp = () => {
             ))}
           </select>
         </label>
+        {selectedAudioDevice && (
+          <div style={{ marginTop: "5px", marginLeft: "10px" }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={useExactAudioDeviceId}
+                onChange={(e) => setUseExactAudioDeviceId(e.target.checked)}
+              />
+              <span style={{ fontSize: "0.9em", marginLeft: "5px" }}>
+                deviceIdをexactに設定
+              </span>
+            </label>
+          </div>
+        )}
       </div>
 
       <div>
@@ -411,15 +455,42 @@ const CameraApp = () => {
                   {/* 配列（facingModeなど）の場合はセレクトボックス */}
                   {Array.isArray(capValue) && (
                     <div>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.8em",
-                          marginBottom: "3px",
-                        }}
-                      >
-                        値
-                      </label>
+                      <div style={{ display: "flex", alignItems: "center", marginBottom: "5px" }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8em",
+                            marginRight: "10px",
+                            flex: "1",
+                          }}
+                        >
+                          値
+                        </label>
+                        {/* 配列要素が真偽値の場合を除いて、有効・無効の切り替えを表示 */}
+                        {!(capValue.length === 2 && typeof capValue[0] === "boolean") && (
+                          <label style={{ fontSize: "0.8em" }}>
+                            <input
+                              type="checkbox"
+                              checked={customConstraints[key] !== undefined}
+                              onChange={(e) => {
+                                if (!e.target.checked) {
+                                  // 値を未指定に（キー自体を削除）
+                                  const newConstraints = { ...customConstraints };
+                                  delete newConstraints[key];
+                                  setCustomConstraints(newConstraints);
+                                } else if (capValue.length > 0) {
+                                  // デフォルト値を設定
+                                  setCustomConstraints({
+                                    ...customConstraints,
+                                    [key]: { ideal: String(capValue[0]) },
+                                  });
+                                }
+                              }}
+                            />
+                            <span style={{ marginLeft: "5px" }}>有効</span>
+                          </label>
+                        )}
+                      </div>
                       <select
                         value={
                           customConstraints[key]?.exact ||
@@ -434,7 +505,7 @@ const CameraApp = () => {
                           });
                         }}
                         style={{ width: "100%" }}
-                        disabled={capValue.length === 0}
+                        disabled={customConstraints[key] === undefined || capValue.length === 0}
                       >
                         <option value="">指定なし</option>
                         {capValue.map((val) => (
@@ -455,7 +526,7 @@ const CameraApp = () => {
                         </div>
                       )}
 
-                      {customConstraints[key] && capValue.length > 0 && (
+                      {customConstraints[key] !== undefined && capValue.length > 0 && !(capValue.length === 2 && typeof capValue[0] === "boolean") && (
                         <div style={{ marginTop: "5px" }}>
                           <label>
                             <input
@@ -495,15 +566,40 @@ const CameraApp = () => {
                     capValue !== null &&
                     ("min" in capValue || "max" in capValue) && (
                       <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.8em",
-                            marginBottom: "3px",
-                          }}
-                        >
-                          理想値
-                        </label>
+                        <div style={{ display: "flex", alignItems: "center", marginBottom: "5px" }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8em",
+                              marginRight: "10px",
+                              flex: "1",
+                            }}
+                          >
+                            理想値
+                          </label>
+                          <label style={{ fontSize: "0.8em" }}>
+                            <input
+                              type="checkbox"
+                              checked={customConstraints[key] !== undefined}
+                              onChange={(e) => {
+                                if (!e.target.checked) {
+                                  // 値を未指定に（キー自体を削除）
+                                  const newConstraints = { ...customConstraints };
+                                  delete newConstraints[key];
+                                  setCustomConstraints(newConstraints);
+                                } else {
+                                  // デフォルト値を設定
+                                  const defaultValue = capValue.min !== undefined ? capValue.min : 0;
+                                  setCustomConstraints({
+                                    ...customConstraints,
+                                    [key]: { ideal: defaultValue },
+                                  });
+                                }
+                              }}
+                            />
+                            <span style={{ marginLeft: "5px" }}>有効</span>
+                          </label>
+                        </div>
                         <input
                           type="range"
                           min={capValue.min !== undefined ? capValue.min : 0}
@@ -532,8 +628,9 @@ const CameraApp = () => {
                           }}
                           style={{ width: "100%" }}
                           disabled={
-                            capValue.min === undefined &&
-                            capValue.max === undefined
+                            customConstraints[key] === undefined || 
+                            (capValue.min === undefined &&
+                            capValue.max === undefined)
                           }
                         />
                         <div
@@ -605,8 +702,9 @@ const CameraApp = () => {
                               }}
                               style={{ width: "100%" }}
                               disabled={
-                                capValue.min === undefined &&
-                                capValue.max === undefined
+                                customConstraints[key] === undefined ||
+                                (capValue.min === undefined &&
+                                capValue.max === undefined)
                               }
                             />
                           </div>
@@ -642,8 +740,9 @@ const CameraApp = () => {
                               }}
                               style={{ width: "100%" }}
                               disabled={
-                                capValue.min === undefined &&
-                                capValue.max === undefined
+                                customConstraints[key] === undefined ||
+                                (capValue.min === undefined &&
+                                capValue.max === undefined)
                               }
                             />
                           </div>
@@ -692,8 +791,9 @@ const CameraApp = () => {
                             }}
                             style={{ width: "100%" }}
                             disabled={
-                              capValue.min === undefined &&
-                              capValue.max === undefined
+                              customConstraints[key] === undefined || 
+                              (capValue.min === undefined &&
+                              capValue.max === undefined)
                             }
                           />
                         </div>
@@ -711,10 +811,18 @@ const CameraApp = () => {
                               type="checkbox"
                               checked={!!customConstraints[key]}
                               onChange={(e) => {
-                                setCustomConstraints({
-                                  ...customConstraints,
-                                  [key]: e.target.checked,
-                                });
+                                // チェックボックスがオンならvalueを設定、オフなら未指定にする
+                                if (e.target.checked) {
+                                  setCustomConstraints({
+                                    ...customConstraints,
+                                    [key]: true,
+                                  });
+                                } else {
+                                  // 値を未指定にする（項目を削除）
+                                  const newConstraints = { ...customConstraints };
+                                  delete newConstraints[key];
+                                  setCustomConstraints(newConstraints);
+                                }
                               }}
                             />
                             <span
@@ -736,10 +844,18 @@ const CameraApp = () => {
                             type="checkbox"
                             checked={!!customConstraints[key]}
                             onChange={(e) => {
-                              setCustomConstraints({
-                                ...customConstraints,
-                                [key]: e.target.checked,
-                              });
+                              // チェックボックスがオンならvalueを設定、オフなら未設定にする
+                              if (e.target.checked) {
+                                setCustomConstraints({
+                                  ...customConstraints,
+                                  [key]: true,
+                                });
+                              } else {
+                                // 値を未指定にする（項目を削除）
+                                const newConstraints = { ...customConstraints };
+                                delete newConstraints[key];
+                                setCustomConstraints(newConstraints);
+                              }
                             }}
                           />
                           <span
