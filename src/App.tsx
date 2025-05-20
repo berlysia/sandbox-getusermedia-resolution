@@ -1,4 +1,10 @@
-import { ChangeEventHandler, useRef, useState } from "react";
+import {
+  ChangeEventHandler,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 interface DeviceDetailInfo {
   deviceInfo: MediaDeviceInfo;
@@ -25,7 +31,9 @@ const CameraApp = () => {
   const [selectedVideoDevice, setSelectedVideoDevice] = useState("");
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
   const [facingMode, setFacingMode] = useState("");
-  const [exactFacingMode, setExactFacingMode] = useState(false);
+  const [availableFacingModes, setAvailableFacingModes] = useState<string[]>(
+    [],
+  );
 
   const fetchDevices = async () => {
     try {
@@ -85,6 +93,62 @@ const CameraApp = () => {
   ) => {
     const deviceId = event.currentTarget.value;
     setSelectedVideoDevice(deviceId);
+
+    // デバイス変更時に適切なfacingModeの選択肢を表示するための情報更新
+    updateFacingModeOptions(deviceId);
+  };
+
+  // デバイスが変更されたときにfacingModeの利用可能な値を更新
+  const updateFacingModeOptions = useCallback(
+    (deviceId: string) => {
+      if (!deviceId) {
+        setAvailableFacingModes([]);
+        setFacingMode("");
+        return;
+      }
+
+      const selectedDevice = deviceDetails.find(
+        (detail) => detail.deviceInfo.deviceId === deviceId,
+      );
+
+      // 選択されたデバイスのcapabilitiesにfacingModeがなければfacingModeをクリア
+      if (!selectedDevice?.capabilities?.facingMode) {
+        setAvailableFacingModes([]);
+        setFacingMode("");
+        return;
+      }
+
+      // 利用可能なfacingModeを更新
+      const modes = Array.isArray(selectedDevice.capabilities.facingMode)
+        ? selectedDevice.capabilities.facingMode
+        : [];
+
+      setAvailableFacingModes(modes);
+
+      // 現在選択されているfacingModeが利用可能かどうかチェック
+      if (facingMode && !modes.includes(facingMode)) {
+        // 現在のfacingModeが利用できない場合はクリア
+        setFacingMode("");
+      }
+    },
+    [deviceDetails, facingMode],
+  );
+
+  // デバイスの詳細情報が更新されたとき、選択されているデバイスのfacingMode情報を更新
+  useEffect(() => {
+    if (selectedVideoDevice) {
+      updateFacingModeOptions(selectedVideoDevice);
+    }
+  }, [deviceDetails, selectedVideoDevice, updateFacingModeOptions]);
+
+  const getSelectedDeviceCapabilities = () => {
+    if (!selectedVideoDevice) return null;
+
+    const selectedDevice = deviceDetails.find(
+      (detail) => detail.deviceInfo.deviceId === selectedVideoDevice,
+    );
+
+    return selectedDevice?.capabilities || null;
   };
 
   const startStream = async () => {
@@ -99,6 +163,26 @@ const CameraApp = () => {
         // 高速に停止と開始を行うとデバイスを握ったまま応答しなくなることがあった
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+
+      // 選択されたデバイスのcapabilitiesを取得
+      const deviceCapabilities = getSelectedDeviceCapabilities();
+
+      // facingModeの指定方法を決定
+      let facingModeConstraint = {};
+      if (facingMode && deviceCapabilities?.facingMode) {
+        // capabilitiesに含まれるfacingModeの値を確認
+        const availableFacingModes = Array.isArray(
+          deviceCapabilities.facingMode,
+        )
+          ? deviceCapabilities.facingMode
+          : [];
+
+        // 指定されたfacingModeが利用可能な場合のみ設定
+        if (availableFacingModes.includes(facingMode)) {
+          facingModeConstraint = { facingMode };
+        }
+      }
+
       const constraints: MediaStreamConstraints = {
         ...(selectedVideoDevice && {
           deviceId: { exact: selectedVideoDevice },
@@ -106,10 +190,7 @@ const CameraApp = () => {
         video:
           useMaxResolution || useMinResolution
             ? {
-                ...(facingMode &&
-                  (exactFacingMode
-                    ? { facingMode: { exact: facingMode } }
-                    : { facingMode })),
+                ...facingModeConstraint,
                 width: {
                   ideal: resolution.width,
                   ...(useMaxResolution ? { max: maxResolution.width } : {}),
@@ -124,10 +205,7 @@ const CameraApp = () => {
             : {
                 width: resolution.width,
                 height: resolution.height,
-                ...(facingMode &&
-                  (exactFacingMode
-                    ? { facingMode: { exact: facingMode } }
-                    : { facingMode })),
+                ...facingModeConstraint,
               },
       };
 
@@ -228,23 +306,25 @@ const CameraApp = () => {
           <select
             onChange={(e) => setFacingMode(e.currentTarget.value)}
             value={facingMode}
+            disabled={availableFacingModes.length === 0}
           >
             <option value="">None</option>
-            <option value="user">user</option>
-            <option value="environment">environment</option>
+            {availableFacingModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
           </select>
         </label>
-      </div>
-
-      <div>
-        <label>
-          Exact Facing Mode:
-          <input
-            type="checkbox"
-            checked={exactFacingMode}
-            onChange={(e) => setExactFacingMode(e.target.checked)}
-          />
-        </label>
+        {availableFacingModes.length === 0 ? (
+          <div style={{ fontSize: "0.8em", marginTop: "5px", color: "#888" }}>
+            選択したデバイスではfacingModeがサポートされていません
+          </div>
+        ) : (
+          <div style={{ fontSize: "0.8em", marginTop: "5px" }}>
+            利用可能なfacingMode: {availableFacingModes.join(", ")}
+          </div>
+        )}
       </div>
 
       <div>
