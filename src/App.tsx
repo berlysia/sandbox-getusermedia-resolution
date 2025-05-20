@@ -36,11 +36,13 @@ const CameraApp = () => {
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
 
   // カスタム制約の状態
-  const [customConstraints, setCustomConstraints] = useState<CustomConstraints>({
-    // 解像度の初期値を設定
-    width: { ideal: 640 },
-    height: { ideal: 480 },
-  });
+  const [customConstraints, setCustomConstraints] = useState<CustomConstraints>(
+    {
+      // 解像度の初期値を設定
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+    },
+  );
   // 選択されたデバイスの能力
   const [currentCapabilities, setCurrentCapabilities] =
     useState<MediaTrackCapabilities | null>(null);
@@ -142,11 +144,11 @@ const CameraApp = () => {
           const value = capabilities[key as keyof MediaTrackCapabilities];
 
           // 幅と高さは既存の値を優先
-          if (key === 'width' && savedWidthConstraint) {
+          if (key === "width" && savedWidthConstraint) {
             initialConstraints[key] = savedWidthConstraint;
-          } else if (key === 'height' && savedHeightConstraint) {
+          } else if (key === "height" && savedHeightConstraint) {
             initialConstraints[key] = savedHeightConstraint;
-          } 
+          }
           // 値の型に基づいて初期値を設定
           else if (Array.isArray(value) && value.length > 0) {
             // 配列の場合は最初の値を使用
@@ -168,10 +170,10 @@ const CameraApp = () => {
         });
 
         // デバイスを変更しても解像度は640x480を保持
-        if (!initialConstraints.width && keys.includes('width')) {
+        if (!initialConstraints.width && keys.includes("width")) {
           initialConstraints.width = { ideal: 640 };
         }
-        if (!initialConstraints.height && keys.includes('height')) {
+        if (!initialConstraints.height && keys.includes("height")) {
           initialConstraints.height = { ideal: 480 };
         }
 
@@ -185,7 +187,13 @@ const CameraApp = () => {
         });
       }
     }
-  }, [selectedVideoDevice, deviceDetails, getDeviceCapabilities]);
+  }, [
+    selectedVideoDevice,
+    deviceDetails,
+    getDeviceCapabilities,
+    customConstraints.width,
+    customConstraints.height,
+  ]);
 
   // デバイス変更時の処理
   const handleVideoDeviceChange: ChangeEventHandler<HTMLSelectElement> = (
@@ -436,7 +444,13 @@ const CameraApp = () => {
                         ))}
                       </select>
                       {capValue.length === 0 && (
-                        <div style={{ fontSize: "0.8em", color: "#888", marginTop: "3px" }}>
+                        <div
+                          style={{
+                            fontSize: "0.8em",
+                            color: "#888",
+                            marginTop: "3px",
+                          }}
+                        >
                           選択肢がありません
                         </div>
                       )}
@@ -517,7 +531,10 @@ const CameraApp = () => {
                             });
                           }}
                           style={{ width: "100%" }}
-                          disabled={capValue.min === undefined && capValue.max === undefined}
+                          disabled={
+                            capValue.min === undefined &&
+                            capValue.max === undefined
+                          }
                         />
                         <div
                           style={{
@@ -587,7 +604,10 @@ const CameraApp = () => {
                                 });
                               }}
                               style={{ width: "100%" }}
-                              disabled={capValue.min === undefined && capValue.max === undefined}
+                              disabled={
+                                capValue.min === undefined &&
+                                capValue.max === undefined
+                              }
                             />
                           </div>
 
@@ -621,16 +641,26 @@ const CameraApp = () => {
                                 });
                               }}
                               style={{ width: "100%" }}
-                              disabled={capValue.min === undefined && capValue.max === undefined}
+                              disabled={
+                                capValue.min === undefined &&
+                                capValue.max === undefined
+                              }
                             />
                           </div>
                         </div>
 
-                        {capValue.min === undefined && capValue.max === undefined && (
-                          <div style={{ fontSize: "0.8em", color: "#888", marginTop: "3px" }}>
-                            値の範囲が未定義です
-                          </div>
-                        )}
+                        {capValue.min === undefined &&
+                          capValue.max === undefined && (
+                            <div
+                              style={{
+                                fontSize: "0.8em",
+                                color: "#888",
+                                marginTop: "3px",
+                              }}
+                            >
+                              値の範囲が未定義です
+                            </div>
+                          )}
 
                         {/* exact制約 */}
                         <div style={{ marginTop: "8px" }}>
@@ -661,7 +691,10 @@ const CameraApp = () => {
                               });
                             }}
                             style={{ width: "100%" }}
-                            disabled={capValue.min === undefined && capValue.max === undefined}
+                            disabled={
+                              capValue.min === undefined &&
+                              capValue.max === undefined
+                            }
                           />
                         </div>
                       </div>
@@ -694,8 +727,37 @@ const CameraApp = () => {
                       </div>
                     )}
 
+                  {/* 真偽値（Boolean型）の即値の場合 */}
+                  {!Array.isArray(capValue) && typeof capValue === "boolean" && (
+                    <div>
+                      <div style={{ marginTop: "5px" }}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={!!customConstraints[key]}
+                            onChange={(e) => {
+                              setCustomConstraints({
+                                ...customConstraints,
+                                [key]: e.target.checked,
+                              });
+                            }}
+                          />
+                          <span
+                            style={{ fontSize: "0.9em", marginLeft: "5px" }}
+                          >
+                            有効にする
+                          </span>
+                        </label>
+                      </div>
+                      <div style={{ fontSize: "0.8em", color: "#666", marginTop: "3px" }}>
+                        デフォルト値: {capValue ? "true" : "false"}
+                      </div>
+                    </div>
+                  )}
+
                   {/* その他の型の場合 */}
                   {!Array.isArray(capValue) &&
+                    typeof capValue !== "boolean" &&
                     (typeof capValue !== "object" ||
                       capValue === null ||
                       (!("min" in capValue) && !("max" in capValue))) && (
